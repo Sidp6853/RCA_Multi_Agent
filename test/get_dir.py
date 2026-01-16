@@ -1,4 +1,4 @@
-from tools.get_project_directory_tool import get_project_directory
+from app.tools.get_project_directory_tool import get_project_directory
 import os
 
 # Set the environment variable for testing

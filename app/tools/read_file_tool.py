@@ -5,7 +5,7 @@ from langchain.tools import tool
 @tool("read_file")
 def read_file(file_path: str) -> str:
     """
-    Reads file content from project.
+    Reads file content.
     """
 
     codebase_root = os.getenv("CODEBASE_ROOT")
@@ -14,12 +14,12 @@ def read_file(file_path: str) -> str:
         raise RuntimeError("CODEBASE_ROOT environment variable not set")
 
     # Normalize linux container path
-    if file_path.startswith("/usr/srv/app"):
+    if file_path.startswith("/usr/srv/app"):  
         relative_path = file_path.replace("/usr/srv/app", "").lstrip("/")
         abs_path = os.path.join(codebase_root, "app", relative_path)
 
     else:
-        # fallback direct mapping
+        
         abs_path = os.path.join(codebase_root, file_path.lstrip("/"))
 
     abs_path = os.path.abspath(abs_path)
