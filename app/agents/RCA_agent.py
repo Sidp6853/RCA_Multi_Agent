@@ -2,7 +2,6 @@ import os
 from dotenv import load_dotenv
 from typing import Dict, Any
 
-from app.memory.message_history import MessageHistoryLogger
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import (
@@ -16,28 +15,14 @@ from langgraph.graph.message import MessagesState
 
 from app.tools.read_file_tool import read_file
 from app.tools.get_project_directory_tool import get_project_directory
+from app.tools.check_dependency_tool import check_dependency
 
 load_dotenv()
 
-# -------------------------------------------------
-# MESSAGE LOGGER
-# -------------------------------------------------
-
-LOG_PATH = "logs/session_history.json"
-
-history_logger = MessageHistoryLogger(LOG_PATH)
-
-
-# -------------------------------------------------
-# STATE
-# -------------------------------------------------
 
 class RCAState(MessagesState):
     shared_memory: Dict[str, Any]
 
-# -------------------------------------------------
-# MODEL
-# -------------------------------------------------
 
 model = ChatGoogleGenerativeAI(
     model="gemini-2.5-flash",
@@ -46,47 +31,74 @@ model = ChatGoogleGenerativeAI(
     streaming=False
 )
 
-# -------------------------------------------------
-# SYSTEM PROMPT
-# -------------------------------------------------
+
 
 SYSTEM_PROMPT = """
 You are an expert Root Cause Analysis (RCA) Agent specializing in debugging and error analysis for APM (Application Performance Monitoring) codebases.
 
-Your mission:
-Perform a precise Root Cause Analysis using the REAL codebase files.
+YOUR MISSION:
+Perform precise Root Cause Analysis using REAL codebase files accessed through tools.
 
-STRICT RULES:
-- ALWAYS read files using tools
-- NEVER guess
-- NEVER rely only on stacktrace text
-- Focus ONLY on application files (/usr/srv/app/)
-- Ignore framework paths (/usr/local/lib/)
+STRICT RULES - NEVER BREAK THESE:
+1. ALWAYS read files using the read_file tool - NEVER guess file contents
+2. NEVER rely solely on stacktrace snippets - they may be incomplete or truncated
+3. ALWAYS verify your analysis against actual source code
+4. Focus ONLY on application files (files under /usr/srv/app/ or similar app paths)
+5. IGNORE framework/library paths (e.g., /usr/local/lib/, site-packages/)
+6. Only analyze files you have successfully read with tools
 
-PROCESS:
+REQUIRED PROCESS - FOLLOW STRICTLY:
 
-1. Parse Error Trace
-2. Identify root file
-3. Explore project
-4. Read exact source files
-5. Compare expected vs actual
-6. Output RCA
+Step 1: PARSE ERROR TRACE
+   - Extract exception type, message, and line number
+   - Identify all application files in the stack trace
+   - Note the exact error location (file path + line number)
+   - Filter out external library paths
 
-If trace is missing:
-Return exactly:
-Insufficient error data to perform RCA.
+Step 2: IDENTIFY ROOT FILE
+   - Find the FIRST application file where the error originated
+   - This is usually the deepest application file in the stack trace
+   - Extract the relative path (remove /usr/srv/app/ or /usr/srv/ prefix)
+
+Step 3: READ SOURCE FILE
+   - Use read_file tool with the relative path
+   - Verify the file was read successfully (check success field)
+   - If file not found, try alternative paths (e.g., with/without 'app/' prefix)
+
+Step 4: ANALYZE ACTUAL CODE
+   - Examine the EXACT line mentioned in the error
+   - Look at surrounding context (5-10 lines before and after)
+   - Identify what the code is trying to do
+   - Compare against the error message
+
+Step 5: IDENTIFY ROOT CAUSE
+   - What exactly went wrong? (attribute error, type mismatch, logic error, etc.)
+   - Why did it fail? (missing attribute, wrong variable name, incorrect assumption, etc.)
+   - What was expected vs what actually happened?
+
+Step 6: OUTPUT RCA REPORT
+   Provide a structured response with:
+   - Error Summary: Brief description of what failed
+   - Root Cause: Specific reason for failure with exact line reference
+   - Evidence: Quote the problematic code line(s)
+   - Fix Recommendation: Precise code change needed
+
+ERROR HANDLING:
+- If trace is missing or incomplete: Return "Insufficient error data to perform RCA."
+- If file cannot be read: Try alternative paths, then report file access issue
+- If analysis is unclear: State what additional information is needed
+
+REMEMBER:
+- Your analysis is ONLY as good as the files you actually read
+- NEVER make assumptions about code you haven't seen
+- ALWAYS cite specific line numbers and file paths
+- Quality over speed - thorough analysis is critical
 """
 
-# -------------------------------------------------
-# TOOL BINDING
-# -------------------------------------------------
-
-tools = [read_file, get_project_directory]
+tools = [read_file, get_project_directory, check_dependency]
 model_with_tools = model.bind_tools(tools)
 
-# -------------------------------------------------
-# LLM NODE
-# -------------------------------------------------
+
 
 def rca_llm_node(state: RCAState):
 
@@ -97,15 +109,7 @@ def rca_llm_node(state: RCAState):
         [SystemMessage(content=SYSTEM_PROMPT)] + state["messages"]
     )
 
-   
 
-    history_logger.log_iteration(
-    iteration=iteration,
-    agent_name="rca_agent",
-    input_data=state["messages"][-1].content,
-    tool_calls=state["shared_memory"]["tool_calls"],
-    output_data=response.content
-)
 
 
     # Save agent response internally
@@ -120,9 +124,6 @@ def rca_llm_node(state: RCAState):
         "shared_memory": state["shared_memory"]
     }
 
-# -------------------------------------------------
-# TOOL EXECUTOR NODE
-# -------------------------------------------------
 
 def tool_node(state: RCAState):
 
@@ -143,19 +144,13 @@ def tool_node(state: RCAState):
         elif tool_name == "get_project_directory":
             observation = get_project_directory.invoke(tool_args)
 
+        elif tool_name == "check_dependency":
+            observation = check_dependency.invoke(tool_args)    
+
         else:
             observation = f"Unknown tool: {tool_name}"
 
-        # -------- Log Tool Execution --------
-        history_logger.log(
-            role="tool",
-            content=str(observation),
-            metadata={
-                "tool": tool_name,
-                "iteration": state["shared_memory"]["iteration"],
-                "input": tool_args
-            }
-        )
+   
 
         # Save internally
         state["shared_memory"]["tool_calls"].append({
@@ -177,10 +172,6 @@ def tool_node(state: RCAState):
         "shared_memory": state["shared_memory"]
     }
 
-# -------------------------------------------------
-# ROUTER WITH LOOP SAFETY
-# -------------------------------------------------
-
 def should_continue(state: RCAState):
 
     # Hard safety cap to avoid infinite loops
@@ -194,9 +185,6 @@ def should_continue(state: RCAState):
 
     return END
 
-# -------------------------------------------------
-# GRAPH
-# -------------------------------------------------
 
 graph = StateGraph(RCAState)
 
@@ -215,9 +203,7 @@ graph.add_edge("tools", "llm")
 
 rca_app = graph.compile()
 
-# -------------------------------------------------
-# RUNNER
-# -------------------------------------------------
+
 
 if __name__ == "__main__":
 
@@ -228,12 +214,6 @@ if __name__ == "__main__":
     with open(trace_path, "r", encoding="utf-8") as f:
         trace_data = f.read()
 
-    # -------- Log User Input --------
-    history_logger.log(
-        role="user",
-        content=trace_data,
-        metadata={"source": "trace_file"}
-    )
 
     result = rca_app.invoke({
         "messages": [HumanMessage(content=trace_data)],
@@ -249,11 +229,7 @@ if __name__ == "__main__":
     final_output = result["messages"][-1].content
     result["shared_memory"]["final_result"] = final_output
 
-    # -------- Log Final RCA --------
-    history_logger.log(
-        role="final_output",
-        content=final_output
-    )
+
 
     print("\n================ RCA OUTPUT ================\n")
     print(final_output)

@@ -1,182 +1,188 @@
-# app/agents/patch_agent.py
-
-import os
-import json
-from pathlib import Path
-from datetime import datetime
-from typing import Dict, Any
-from dotenv import load_dotenv
-
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage
-
-from app.tools.read_file_tool import read_file
-from app.tools.create_patch_tool import create_patch_file
-
-load_dotenv()
-
-# -------------------------------------------------
-# MESSAGE LOGGER
-# -------------------------------------------------
-class MessageHistoryLogger:
-    """Logs agent iterations to a JSON file for continuous session tracking."""
-
-    def __init__(self, file_path: str = "logs/patch_agent_history.json"):
-        self.file_path = Path(file_path)
-        self.file_path.parent.mkdir(exist_ok=True, parents=True)
-        if not self.file_path.exists():
-            self._initialize_file()
-
-    def _initialize_file(self):
-        base_structure = {
-            "run_id": f"patch_pipeline_run_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
-            "created_at": datetime.utcnow().isoformat(),
-            "iterations": [],
-            "final_status": "running"
-        }
-        with open(self.file_path, "w", encoding="utf-8") as f:
-            json.dump(base_structure, f, indent=4)
-
-    def log_iteration(self, iteration: int, agent_name: str, input_data, tool_calls, output_data):
-        with open(self.file_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-
-        entry = {
-            "iteration": iteration,
-            "agent": agent_name,
-            "input": input_data,
-            "tool_calls": tool_calls,
-            "output": output_data,
-            "timestamp": datetime.utcnow().isoformat()
-        }
-        data["iterations"].append(entry)
-
-        with open(self.file_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4)
-
-    def mark_complete(self):
-        with open(self.file_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        data["final_status"] = "completed"
-        with open(self.file_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4)
 
 
-# -------------------------------------------------
-# PATCH AGENT
-# -------------------------------------------------
-class PatchAgent:
-    def __init__(self, gemini_model="gemini-2.5-flash", temperature=0):
-        self.model = ChatGoogleGenerativeAI(
-            model=gemini_model,
-            api_key=os.getenv("GOOGLE_API_KEY"),
-            temperature=temperature,
-            streaming=False
-        )
-        self.history_logger = MessageHistoryLogger()
-        self.iteration = 0
-        self.patches_dir = Path("patches")
-        self.patches_dir.mkdir(exist_ok=True)
+from datetime import datetime, timedelta
+import logging
+from sqlalchemy.orm import joinedload
+from fastapi import HTTPException
+from app.config.security import generate_token, get_token_payload, hash_password, is_password_strong_enough, load_user, str_decode, str_encode, verify_password
+from app.models.user import User, UserToken
+from app.services.email import send_account_activation_confirmation_email, send_account_verification_email, send_password_reset_email
+from app.utils.email_context import FORGOT_PASSWORD, USER_VERIFY_ACCOUNT
+from app.utils.string import unique_string
+from app.config.settings import get_settings
 
-    # -------------------------------------------------
-    # MAIN PATCH FUNCTION
-    # -------------------------------------------------
-    def generate_patch(self, original_file_path: str, fix_plan: str) -> Dict[str, Any]:
-        self.iteration += 1
-        agent_name = "PatchAgent"
-        tool_calls_log = []
+settings = get_settings()
 
-        # -------------------------
-        # Read original file using read_file tool
-        # -------------------------
-        try:
-            read_result = read_file.invoke({"file_path": original_file_path})
-            tool_calls_log.append({
-                "tool": "read_file",
-                "input": {"file_path": original_file_path},
-                "output": read_result
-            })
-            original_code = read_result
-        except FileNotFoundError as e:
-            return {"success": False, "message": str(e)}
-
-        # -------------------------
-        # Construct Gemini prompt
-        # -------------------------
-        SYSTEM_PROMPT = """
-You are a Patch Generation Agent.
-
-Responsibilities:
-1. Read the full original Python file
-2. Apply the fix plan exactly
-3. Do not remove unrelated code
-4. Output the entire fixed file content
-5. Do NOT add explanations, markdown, or comments
-"""
-
-        human_prompt = f"""
-Original file content:
-{original_code}
-
-Fix Plan:
-{fix_plan}
-
-Output the full fixed code.
-"""
-
-        # -------------------------
-        # Call Gemini LLM
-        # -------------------------
-        llm_response = self.model.invoke([
-            SystemMessage(content=SYSTEM_PROMPT),
-            HumanMessage(content=human_prompt)
-        ])
-        fixed_code = llm_response.content.strip() if llm_response else ""
-
-        # -------------------------
-        # Save fixed code using create_patch_file tool
-        # -------------------------
-        patch_result = create_patch_file.invoke({
-            "original_file_path": original_file_path,
-            "fixed_content": fixed_code
-        })
-        tool_calls_log.append({
-            "tool": "create_patch_file",
-            "input": {"original_file_path": original_file_path, "fixed_content": "CODE_SNIPPET"},
-            "output": patch_result
-        })
-
-        # -------------------------
-        # Log iteration
-        # -------------------------
-        self.history_logger.log_iteration(
-            iteration=self.iteration,
-            agent_name=agent_name,
-            input_data={"file_path": original_file_path, "fix_plan": fix_plan},
-            tool_calls=tool_calls_log,
-            output_data=patch_result
-        )
-
-        return patch_result
+async def create_user_account(data, session, background_tasks):
+    
+    user_exist = session.query(User).filter(User.emails == data.email).first()
+    if user_exist:
+        raise HTTPException(status_code=400, detail="Email is already exists.")
+    
+    if not is_password_strong_enough(data.password):
+        raise HTTPException(status_code=400, detail="Please provide a strong password.")
+    
+    
+    user = User()
+    user.name = data.name
+    user.email = data.email
+    user.password = hash_password(data.password)
+    user.is_active = False
+    user.updated_at = datetime.utcnow()
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+    
+    # Account Verification Email
+    await send_account_verification_email(user, background_tasks=background_tasks)
+    return user
+    
+    
+async def activate_user_account(data, session, background_tasks):
+    user = session.query(User).filter(User.email == data.email).first()
+    if not user:
+        raise HTTPException(status_code=400, detail="This link is not valid.")
+    
+    user_token = user.get_context_string(context=USER_VERIFY_ACCOUNT)
+    try:
+        token_valid = verify_password(user_token, data.token)
+    except Exception as verify_exec:
+        logging.exception(verify_exec)
+        token_valid = False
+    if not token_valid:
+        raise HTTPException(status_code=400, detail="This link either expired or not valid.")
+    
+    user.is_active = True
+    user.updated_at = datetime.utcnow()
+    user.verified_at = datetime.utcnow()
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+    # Activation confirmation email
+    await send_account_activation_confirmation_email(user, background_tasks)
+    return user
 
 
-# -------------------------------------------------
-# TEST RUNNER
-# -------------------------------------------------
-if __name__ == "__main__":
-    patch_agent = PatchAgent()
+async def get_login_token(data, session):
+    # verify the email and password
+    # Verify that user account is verified
+    # Verify user account is active
+    # generate access_token and refresh_token and ttl
+    
+    user = await load_user(data.username, session)
+    if not user:
+        raise HTTPException(status_code=400, detail="Email is not registered with us.")
+    
+    if not verify_password(data.password, user.password):
+        raise HTTPException(status_code=400, detail="Incorrect email or password.")
+    
+    if not user.verified_at:
+        raise HTTPException(status_code=400, detail="Your account is not verified. Please check your email inbox to verify your account.")
+    
+    if not user.is_active:
+        raise HTTPException(status_code=400, detail="Your account has been dactivated. Please contact support.")
+        
+    # Generate the JWT Token
+    return _generate_tokens(user, session)
 
-    # Example inputs
-    original_file = "codebase/user.py"
-    fix_plan = (
-        "Change User.emails to User.email wherever used.\n"
-        "Ensure constructor, queries, validations, and async functions reflect this change."
-    )
 
-    result = patch_agent.generate_patch(original_file, fix_plan)
+async def get_refresh_token(refresh_token, session):
+    token_payload = get_token_payload(refresh_token, settings.SECRET_KEY, settings.JWT_ALGORITHM)
+    if not token_payload:
+        raise HTTPException(status_code=400, detail="Invalid Request.")
+    
+    refresh_key = token_payload.get('t')
+    access_key = token_payload.get('a')
+    user_id = str_decode(token_payload.get('sub'))
+    user_token = session.query(UserToken).options(joinedload(UserToken.user)).filter(UserToken.refresh_key == refresh_key,
+                                                 UserToken.access_key == access_key,
+                                                 UserToken.user_id == user_id,
+                                                 UserToken.expires_at > datetime.utcnow()
+                                                 ).first()
+    if not user_token:
+        raise HTTPException(status_code=400, detail="Invalid Request.")
+    
+    user_token.expires_at = datetime.utcnow()
+    session.add(user_token)
+    session.commit()
+    return _generate_tokens(user_token.user, session)
 
-    print("\n========= PATCH RESULT =========")
-    print(result)
-    print("===============================")
 
-    patch_agent.history_logger.mark_complete()
+def _generate_tokens(user, session):
+    refresh_key = unique_string(100)
+    access_key = unique_string(50)
+    rt_expires = timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES)
+
+    user_token = UserToken()
+    user_token.user_id = user.id
+    user_token.refresh_key = refresh_key
+    user_token.access_key = access_key
+    user_token.expires_at = datetime.utcnow() + rt_expires
+    session.add(user_token)
+    session.refresh(user_token)
+
+    at_payload = {
+        "sub": str_encode(str(user.id)),
+        'a': access_key,
+        'r': str_encode(str(user_token.id)),
+        'n': str_encode(f"{user.name}")
+    }
+
+    at_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = generate_token(at_payload, settings.JWT_SECRET, settings.JWT_ALGORITHM, at_expires)
+
+    rt_payload = {"sub": str_encode(str(user.id)), "t": refresh_key, 'a': access_key}
+    refresh_token = generate_token(rt_payload, settings.SECRET_KEY, settings.JWT_ALGORITHM, rt_expires)
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "expires_in": at_expires.seconds
+    }
+    
+async def email_forgot_password_link(data, background_tasks, session):
+    user = await load_user(data.email, session)
+    if not user.verified_at:
+        raise HTTPException(status_code=400, detail="Your account is not verified. Please check your email inbox to verify your account.")
+    
+    if not user.is_active:
+        raise HTTPException(status_code=400, detail="Your account has been dactivated. Please contact support.")
+    
+    await send_password_reset_email(user, background_tasks)
+    
+    
+async def reset_user_password(data, session):
+    user = await load_user(data.email, session)
+    
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid request")
+        
+    
+    if not user.verified_at:
+        raise HTTPException(status_code=400, detail="Invalid request")
+    
+    if not user.is_active:
+        raise HTTPException(status_code=400, detail="Invalid request")
+    
+    user_token = user.get_context_string(context=FORGOT_PASSWORD)
+    try:
+        token_valid = verify_password(user_token, data.token)
+    except Exception as verify_exec:
+        logging.exception(verify_exec)
+        token_valid = False
+    if not token_valid:
+        raise HTTPException(status_code=400, detail="Invalid window.")
+    
+    user.password = hash_password(data.password)
+    user.updated_at = datetime.now()
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+    # Notify user that password has been updated
+    
+    
+async def fetch_user_detail(pk, session):
+    user = session.query(User).filter(User.id == pk).first()
+    if user:
+        return user
+    raise HTTPException(status_code=400, detail="User does not exists.")
+

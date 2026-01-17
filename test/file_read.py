@@ -8,7 +8,7 @@ load_dotenv()
 
 codebase_root = os.getenv("CODEBASE_ROOT")
 
-file_to_read = "app/services/user.py"
+file_to_read = "app\services\email.py"
 
 print("Codebase Root (ENV):", codebase_root)
 print("Requested File:", file_to_read)

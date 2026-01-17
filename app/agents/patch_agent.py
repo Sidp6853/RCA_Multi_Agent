@@ -133,10 +133,26 @@ if __name__ == "__main__":
     patch_agent = PatchAgent()
 
     # Example inputs
-    original_file = "example_user.py"
+    original_file = r'D:\Siddhi\projects\RCA-Agent\codebase\app\services\user.py',
     fix_plan = (
-        "Class User has attribute 'emails' which should be renamed to 'email'.\n"
-        "Ensure the constructor reflects this change."
+        """ Fix Summary:
+- Correct `User.emails` to `User.email` in `user.py` to resolve `AttributeError`.
+
+Files To Modify:
+- `user.py`
+
+Patch Plan:
+1. Open `user.py`.
+2. Locate all instances of `User.emails`.
+3. Replace each instance of `User.emails` with `User.email`.
+
+Safety Considerations:
+- Edge cases: Ensure that `User.email` is the correct attribute name and that there are no other parts of the codebase expecting `User.emails`.
+- Regression risk: Low, as this is a direct correction of an `AttributeError`. However, verify that the `User.email` attribute exists and holds the expected data type (e.g., string).
+- Validation steps:
+    - Run unit tests related to user authentication and email handling.
+    - Manually test user registration, login, and any features that display or use user email addresses.
+    - Monitor logs for any new `AttributeError` or unexpected behavior related to user objects."""
     )
 
     result = patch_agent.generate_patch(original_file, fix_plan)

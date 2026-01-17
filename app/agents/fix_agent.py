@@ -7,27 +7,20 @@ from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import MessagesState
 
-from app.memory.message_history import MessageHistoryLogger
+
 from app.tools.read_file_tool import read_file
 from app.tools.get_project_directory_tool import get_project_directory
 
+import json
+
+
 load_dotenv()
 
-# -------------------------------------------------
-# MESSAGE LOGGER
-# -------------------------------------------------
-LOG_PATH = "logs/fix_agent_message_history.json"
-history_logger = MessageHistoryLogger(LOG_PATH)
 
-# -------------------------------------------------
-# STATE
-# -------------------------------------------------
 class FixState(MessagesState):
     shared_memory: Dict[str, Any]
 
-# -------------------------------------------------
-# MODEL
-# -------------------------------------------------
+
 model = ChatGoogleGenerativeAI(
     model="gemini-2.5-flash",
     api_key=os.getenv("GOOGLE_API_KEY"),
@@ -35,9 +28,7 @@ model = ChatGoogleGenerativeAI(
     streaming=False
 )
 
-# -------------------------------------------------
-# SYSTEM PROMPT
-# -------------------------------------------------
+
 SYSTEM_PROMPT = """
 You are a Fix Suggestion Agent.
 
@@ -69,32 +60,37 @@ Safety Considerations:
 - Edge cases
 - Regression risk
 - Validation steps
+
+Generate the fix plan **only once**. Do not repeat or rephrase steps multiple times.
+
 """
 
-# -------------------------------------------------
-# TOOL BINDING
-# -------------------------------------------------
-tools = [read_file, get_project_directory]
-model_with_tools = model.bind_tools(tools)
 
-# -------------------------------------------------
-# LLM NODE
-# -------------------------------------------------
+tools = [read_file, get_project_directory]
+model_with_tools = model.bind_tools(tools) 
+
+
 def fix_llm_node(state: FixState):
     iteration = state["shared_memory"]["fix_iteration"] + 1
     state["shared_memory"]["fix_iteration"] = iteration
 
-    rca_output = state["shared_memory"].get("final_result")
+    rca_output = state["shared_memory"].get("rca_result")
+
     if not rca_output:
         raise ValueError("RCA output missing in shared memory")
 
     fix_input = f"""
-Root Cause Analysis Result:
+            Root Cause Analysis:
 
-{rca_output}
+            Error Type: {rca_output['error_type']}
+            Error Message: {rca_output['error_message']}
+            Root Cause: {rca_output['root_cause']}
+            Affected File: {rca_output['affected_file']}
+            Affected Line: {rca_output['affected_line']}
 
-Generate Fix Plan:
-"""
+            Generate Fix Plan:
+        """
+
 
     # Invoke model
     response = model_with_tools.invoke(
@@ -111,23 +107,12 @@ Generate Fix Plan:
         "tool_calls": response.tool_calls
     })
 
-    # -------- Log iteration --------
-    history_logger.log_iteration(
-        iteration=iteration,
-        agent_name="fix_agent",
-        input_data=fix_input,
-        tool_calls=response.tool_calls,
-        output_data=response.content
-    )
-
     return {
         "messages": [response],
         "shared_memory": state["shared_memory"]
     }
 
-# -------------------------------------------------
-# TOOL EXECUTOR NODE
-# -------------------------------------------------
+
 def tool_node(state: FixState):
     results = []
     last_message = state["messages"][-1]
@@ -154,14 +139,6 @@ def tool_node(state: FixState):
             "output": observation
         })
 
-        # Log tool execution
-        history_logger.log_iteration(
-            iteration=state["shared_memory"]["fix_iteration"],
-            agent_name="fix_agent_tool",
-            input_data=tool_args,
-            tool_calls=[],
-            output_data=observation
-        )
 
         results.append(ToolMessage(
             content=str(observation),
@@ -173,18 +150,14 @@ def tool_node(state: FixState):
         "shared_memory": state["shared_memory"]
     }
 
-# -------------------------------------------------
-# ROUTER
-# -------------------------------------------------
+
 def should_continue(state: FixState):
     last_message = state["messages"][-1]
     if last_message.tool_calls:
         return "tools"
     return END
 
-# -------------------------------------------------
-# GRAPH
-# -------------------------------------------------
+
 graph = StateGraph(FixState)
 graph.add_node("llm", fix_llm_node)
 graph.add_node("tools", tool_node)
@@ -194,32 +167,24 @@ graph.add_edge("tools", "llm")
 
 fix_app = graph.compile()
 
-# -------------------------------------------------
-# TEST RUNNER
-# -------------------------------------------------
+
 if __name__ == "__main__":
-    # Simulate RCA output
-    dummy_rca = """
-AttributeError: User.emails does not exist.
-Fix required: Change User.emails to User.email in user.py
-"""
+    
+    with open("langgraph_rca_system/output/shared_memory.json", "r", encoding="utf-8") as f:
+        rca_shared = json.load(f)
 
-    # Initialize shared memory
+    rca_result = rca_shared["rca_result"] 
+
+
     shared_memory = {
-        "final_result": dummy_rca,
-        "fix_iteration": 0,
-        "fix_outputs": [],
-        "fix_tool_calls": []
-    }
+    "rca_result": rca_result,
+    "fix_iteration": 0,
+    "fix_outputs": [],
+    "fix_tool_calls": []
+}
 
-    # Log initial RCA input
-    history_logger.log_iteration(
-        iteration=0,
-        agent_name="user",
-        input_data=dummy_rca,
-        tool_calls=[],
-        output_data=""
-    )
+
+
 
     result = fix_app.invoke({
         "messages": [],
@@ -230,5 +195,4 @@ Fix required: Change User.emails to User.email in user.py
     print(result["messages"][-1].content)
     print("\n==========================================\n")
 
-    # Mark session complete
-    history_logger.mark_complete()
+    

@@ -6,7 +6,7 @@ from typing import Dict, Any
 
 
 @tool
-def get_project_directory(relative_path: str = ".") -> dict[str, any]:
+def get_project_directory(relative_path: str = ".") -> Dict[str, Any]:
     """
     List directory structure as a nested tree.
     Shows files and folders naturally stacked.
