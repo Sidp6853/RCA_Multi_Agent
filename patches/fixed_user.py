@@ -1,126 +1,110 @@
-from datetime import datetime
-import logging
-from app.models.user import User
-from app.schemas.user import UserCreate
-from app.core.security import get_password_hash
-from sqlalchemy.orm import Session
-from fastapi import HTTPException
-
-async def create_user_account(data: UserCreate, session: Session):
-    user_exist = session.query(User).filter(User.emails == data.email).first()
-    if user_exist:
-        raise HTTPException(status_code=400, detail="Email already exists.")
-    
-    hashed_password = get_password_hash(data.password)
-    
-    new_user = User(
-        email=data.email,
-        hashed_password=hashed_password,
-        first_name=data.first_name,
-        last_name=data.last_name,
-        is_active=True,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow()
-    )
-    
-    session.add(new_user)
-    session.commit()
-    session.refresh(new_user)
-    
-    return new_user
-
-async def get_user_by_email(email: str, session: Session):
-    return session.query(User).filter(User.email == email).first()
-
-async def get_user_by_id(user_id: int, session: Session):
-    return session.query(User).filter(User.id == user_id).first()
-
-async def update_user_last_login(user_id: int, session: Session):
-    user = session.query(User).filter(User.id == user_id).first()
-    if user:
-        user.last_login_at = datetime.utcnow()
-        session.commit()
-        session.refresh(user)
-    return user
-
-async def delete_user_account(user_id: int, session: Session):
-    user = session.query(User).filter(User.id == user_id).first()
-    if user:
-        session.delete(user)
-        session.commit()
-        return {"message": "User deleted successfully"}
-    raise HTTPException(status_code=404, detail="User not found")
-
-```
-**Step 2: Understand the Fix Plan**
-- File: `app/services/user.py`
-- Line: 18
-- Original: `user_exist = session.query(User).filter(User.emails == data.email).first()`
-- Change: `User.emails` to `User.email`
-- Corrected: `user_exist = session.query(User).filter(User.email == data.email).first()`
-
-**Step 3: Apply Surgical Fix**
-I will now apply the change to line 18, keeping all other lines and formatting identical.
-
-**Step 4: Verify Completeness**
-- All imports are preserved.
-- All function definitions are preserved.
-- All other lines of code are preserved.
-- Only line 18 has been modified as specified.
-
-**Step 5: Output the Complete Patched File**
 ```python
-from datetime import datetime
-import logging
+from sqlalchemy.orm import Session
 from app.models.user import User
 from app.schemas.user import UserCreate
 from app.core.security import get_password_hash
-from sqlalchemy.orm import Session
-from fastapi import HTTPException
 
-async def create_user_account(data: UserCreate, session: Session):
+
+def create_user_account(session: Session, data: UserCreate):
+    """
+    Creates a new user account in the database.
+
+    Args:
+        session (Session): The database session.
+        data (UserCreate): The user data for account creation.
+
+    Returns:
+        User: The newly created user object.
+    """
     user_exist = session.query(User).filter(User.email == data.email).first()
     if user_exist:
-        raise HTTPException(status_code=400, detail="Email already exists.")
-    
+        return None  # User with this email already exists
+
     hashed_password = get_password_hash(data.password)
-    
-    new_user = User(
+    user = User(
+        username=data.username,
         email=data.email,
         hashed_password=hashed_password,
-        first_name=data.first_name,
-        last_name=data.last_name,
-        is_active=True,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow()
+        full_name=data.full_name,
+        disabled=False,
     )
-    
-    session.add(new_user)
+    session.add(user)
     session.commit()
-    session.refresh(new_user)
-    
-    return new_user
-
-async def get_user_by_email(email: str, session: Session):
-    return session.query(User).filter(User.email == email).first()
-
-async def get_user_by_id(user_id: int, session: Session):
-    return session.query(User).filter(User.id == user_id).first()
-
-async def update_user_last_login(user_id: int, session: Session):
-    user = session.query(User).filter(User.id == user_id).first()
-    if user:
-        user.last_login_at = datetime.utcnow()
-        session.commit()
-        session.refresh(user)
+    session.refresh(user)
     return user
 
-async def delete_user_account(user_id: int, session: Session):
-    user = session.query(User).filter(User.id == user_id).first()
-    if user:
-        session.delete(user)
-        session.commit()
-        return {"message": "User deleted successfully"}
-    raise HTTPException(status_code=404, detail="User not found")
 
+def get_user_by_email(session: Session, email: str):
+    """
+    Retrieves a user by their email address.
+
+    Args:
+        session (Session): The database session.
+        email (str): The email address of the user to retrieve.
+
+    Returns:
+        User: The user object if found, None otherwise.
+    """
+    return session.query(User).filter(User.email == email).first()
+
+
+def get_user_by_username(session: Session, username: str):
+    """
+    Retrieves a user by their username.
+
+    Args:
+        session (Session): The database session.
+        username (str): The username of the user to retrieve.
+
+    Returns:
+        User: The user object if found, None otherwise.
+    """
+    return session.query(User).filter(User.username == username).first()
+
+
+def get_user_by_id(session: Session, user_id: int):
+    """
+    Retrieves a user by their ID.
+
+    Args:
+        session (Session): The database session.
+        user_id (int): The ID of the user to retrieve.
+
+    Returns:
+        User: The user object if found, None otherwise.
+    """
+    return session.query(User).filter(User.id == user_id).first()
+
+
+def update_user(session: Session, user: User, data: UserCreate):
+    """
+    Updates an existing user's information.
+
+    Args:
+        session (Session): The database session.
+        user (User): The user object to update.
+        data (UserCreate): The new user data.
+
+    Returns:
+        User: The updated user object.
+    """
+    user.username = data.username
+    user.email = data.email
+    user.hashed_password = get_password_hash(data.password)
+    user.full_name = data.full_name
+    session.commit()
+    session.refresh(user)
+    return user
+
+
+def delete_user(session: Session, user: User):
+    """
+    Deletes a user from the database.
+
+    Args:
+        session (Session): The database session.
+        user (User): The user object to delete.
+    """
+    session.delete(user)
+    session.commit()
 ```
