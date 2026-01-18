@@ -80,42 +80,42 @@ STRICT RULES - NEVER BREAK THESE:
 
 REQUIRED PROCESS:
 
-Step 1: UNDERSTAND PROJECT STRUCTURE 
-  - Use get_project_directory to explore the codebase layout 
-  - Identify key directories (app/, src/, lib/, etc.)
-  - Locate where the error files might be located 
-
-Step 2: PARSE ERROR TRACE 
+Step 1: PARSE ERROR TRACE 
   - Identify all the files in the stack trace 
   - Note the exact error location (file path + line number)
   - Filter out external library paths
   - Look for import errors, module not found, or attribute errors 
 
-Step 3: CHECK DEPENDENCIES (if relevant)
-  - If error involves ImportError, ModuleNotFoundError, or AttributeError on imported modules 
-  - Use check_dependency to verify if required packages are installed
-  - Check for version mismatches or missing dependencies 
-  - This can quickly identify environment-related issues 
-
-Step 4: IDENTIFY ROOT FILE 
-  - Find the FIRST application file where the error originated
+Step 2: IDENTIFY ROOT FILE 
+  - Find the file where the error originated
   - This is usually the deepest application file in the stack trace 
   - Extract the relative path (remove unnecessary prefixes if fileNotFoundError)
-  - If path is unclear, use get_project_directory to locate it 
-
-Step 5: READ SOURCE FILE 
+  - If path is unclear, use get_project_directory to locate it
+  - Always verfiy the file path from the stack trace before reading.Always check the parent folder from the trace to make sure you read the correct file. For example src/main.py then read the main.py file from the src folder only. 
+  - 
+Step 3: READ SOURCE FILE 
   - Use read_file tool with the relative path discovered in Step 1
   - Verify the file was read successfully (check success field) 
-  - If file not found, use get_project_directory to find alternative paths
-  - Read related files if the error involves imports or function calls from other modules 
+  - Read related files if the error only if error involves imports or function calls from other modules 
 
-Step 6: ANALYZE ACTUAL CODE
+Step 4: ANALYZE ACTUAL CODE
   - Examine the EXACT line mentioned in the error 
   - Look at surrounding context (5-10 lines before and after)
   -Check the function the line is in, and any relevant class definitions 
   - Identify what the code is trying to do 
   - Compare against the error message 
-  - If code imports from other local modules, read those files too 
+      
+
+Step 5: UNDERSTAND PROJECT STRUCTURE 
+  - Use get_project_directory to explore the codebase layout 
+  - Identify key directories (app/, src/, lib/, etc.)
+  - Locate where the error files might be located 
+
+Step 6: CHECK DEPENDENCIES (if relevant)
+  - If error involves ImportError, ModuleNotFoundError, or AttributeError on imported modules 
+  - Use check_dependency to verify if required packages are installed
+  - Check for version mismatches or missing dependencies 
+  - This can quickly identify environment-related issues 
 
 Step 7: IDENTIFY ROOT CAUSE - **CRITICAL: PROVIDE COMPREHENSIVE EXPLANATION**
   - What exactly went wrong? (attribute error, type mismatch, logic error, missing dependency, etc.) 
@@ -195,6 +195,7 @@ USE read_file when:
   - Verifying function/class definitions 
   - Checking variable declarations and usage 
   - Need to understand model definitions or class structures
+  -Always verfiy the file path from the stack trace before reading as multiple files with the same name can exists in different folders.Always check the parent folder from the trace.
 
 USE get_project_directory when: 
   - File paths in trace are unclear or incomplete 
@@ -363,3 +364,8 @@ graph.add_edge(START, "llm")
 graph.add_conditional_edges("llm", should_continue, ["tools", END])
 graph.add_edge("tools", "llm")
 rca_app = graph.compile()
+
+
+
+
+

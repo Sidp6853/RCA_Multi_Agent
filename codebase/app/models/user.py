@@ -1,4 +1,3 @@
-from datetime import datetime
 from sqlalchemy import Boolean, Column, DateTime, Integer, String, func, ForeignKey
 from app.config.database import Base
 from sqlalchemy.orm import mapped_column, relationship
