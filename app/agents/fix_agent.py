@@ -9,9 +9,10 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import MessagesState
 from langchain.output_parsers import PydanticOutputParser, OutputFixingParser
 from langchain_core.exceptions import OutputParserException
+import time
 
 from app.tools.read_file_tool import read_file
-from app.tools.get_project_directory_tool import get_project_directory
+
 
 load_dotenv()
 
@@ -35,20 +36,20 @@ class FixOutput(BaseModel):
     patch_plan: List[str]
     safety_considerations: str
 
-# # ---------------- MODEL ----------------
-# model = ChatGoogleGenerativeAI(
-#     model="gemini-2.5-flash",
-#     api_key=os.getenv("GOOGLE_API_KEY"),
-#     temperature=0,
-#     streaming=False
-# )
-
-from langchain_groq import ChatGroq
-
-model = ChatGroq(
-    model="openai/gpt-oss-120b",
-    api_key=os.getenv("GROQ_API_KEY")
+# ---------------- MODEL ----------------
+model = ChatGoogleGenerativeAI(
+    model="gemini-2.5-flash",
+    api_key=os.getenv("GOOGLE_API_KEY"),
+    temperature=0,
+    streaming=False
 )
+
+# from langchain_groq import ChatGroq
+
+# model = ChatGroq(
+#     model="openai/gpt-oss-120b",
+#     api_key=os.getenv("GROQ_API_KEY")
+# )
 
 fix_parser = PydanticOutputParser(pydantic_object=FixOutput)
 fixing_parser = OutputFixingParser.from_llm(parser=fix_parser, llm=model)  # retries parsing errors
@@ -80,7 +81,7 @@ OUTPUT FORMAT:
 """
 
 # ---------------- TOOLS ----------------
-tools = [read_file, get_project_directory]
+tools = [read_file]
 model_with_tools = model.bind_tools(tools)
 
 # ---------------- LLM NODE ----------------
@@ -102,7 +103,13 @@ Root Cause: {rca_result['root_cause']}
 Affected File: {rca_result['affected_file']}
 Affected Line: {rca_result['affected_line']}
 
+You MUST use the Affected File and Affected Line provided in RCA.
+DO NOT introduce new files.
+files_to_modify MUST contain ONLY the RCA affected file.
+
+
 Generate Fix Plan:
+
 """
 
     # Log agent input
@@ -115,6 +122,7 @@ Generate Fix Plan:
     log_console(f"[ITER {iteration}] AGENT INPUT", agent_input)
 
     # Invoke model
+    time.sleep(30)
     response = model_with_tools.invoke([SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=agent_input)])
 
     # Log agent output
@@ -135,7 +143,13 @@ Generate Fix Plan:
     except OutputParserException:
         structured_fix = fixing_parser.parse(response.content)
 
-    state["shared_memory"]["fix_result"] = structured_fix.model_dump()
+    fix_data = structured_fix.model_dump()
+
+    # FORCE FIX FILE TO RCA AFFECTED FILE
+    fix_data["files_to_modify"] = [rca_result["affected_file"]]
+
+    state["shared_memory"]["fix_result"] = fix_data
+
 
     return {
         "messages": [response],
@@ -160,8 +174,10 @@ def tool_node(state: FixState):
         tool_args = tool_call["args"]
 
         if tool_name == "read_file":
+            time.sleep(30)
             observation = read_file.invoke(tool_args)
         elif tool_name == "get_project_directory":
+            time.sleep(30)
             observation = get_project_directory.invoke(tool_args)
         else:
             observation = f"Unknown tool: {tool_name}"
@@ -192,12 +208,23 @@ def tool_node(state: FixState):
         "message_history": state["message_history"]
     }
 
-# ---------------- FLOW CONTROL ----------------
+
+
 def should_continue(state: FixState):
+    
+    if state["shared_memory"].get("fix_iteration", 0) >= 3:
+        return END
+
     last_message = state["messages"][-1]
+
+    # If tools requested → go to tool node
     if last_message.tool_calls:
         return "tools"
+
+    # Otherwise finish after fix is generated
     return END
+
+
 
 # ---------------- GRAPH ----------------
 graph = StateGraph(FixState)

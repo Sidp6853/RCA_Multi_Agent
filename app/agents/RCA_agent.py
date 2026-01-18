@@ -3,6 +3,7 @@ import json
 from dotenv import load_dotenv
 from typing import Dict, Any, List
 from pydantic import BaseModel, Field
+import time
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
@@ -44,20 +45,20 @@ class RCAOutput(BaseModel):
     
 
 
-# # ---------------- MODEL ----------------
-# model = ChatGoogleGenerativeAI(
-#     model="gemini-2.5-flash",
-#     api_key=os.getenv("GOOGLE_API_KEY"),
-#     temperature=0,
-#     streaming=False
-# )
-
-from langchain_groq import ChatGroq
-
-model = ChatGroq(
-    model="openai/gpt-oss-120b",
-    api_key=os.getenv("GROQ_API_KEY")
+# ---------------- MODEL ----------------
+model = ChatGoogleGenerativeAI(
+    model="gemini-2.5-flash",
+    api_key=os.getenv("GOOGLE_API_KEY"),
+    temperature=0,
+    streaming=False
 )
+
+# from langchain_groq import ChatGroq
+
+# model = ChatGroq(
+#     model="openai/gpt-oss-120b",
+#     api_key=os.getenv("GROQ_API_KEY")
+# )
 
 SYSTEM_PROMPT = """
 
@@ -246,6 +247,7 @@ def rca_llm_node(state: RCAState):
     })
     log_console(f"[ITER {iteration}] AGENT INPUT ({step_type})", agent_input)
 
+    time.sleep(30)
     response = model_with_tools.invoke([SystemMessage(content=SYSTEM_PROMPT)] + state["messages"])
 
 
@@ -300,10 +302,13 @@ def tool_node(state: RCAState):
         tool_args = tool_call["args"]
 
         if tool_name == "read_file":
+            time.sleep(30)       
             observation = read_file.invoke(tool_args)
         elif tool_name == "get_project_directory":
+            time.sleep(30)
             observation = get_project_directory.invoke(tool_args)
         elif tool_name == "check_dependency":
+            time.sleep(30)
             observation = check_dependency.invoke(tool_args)
         else:
             observation = f"Unknown tool: {tool_name}"

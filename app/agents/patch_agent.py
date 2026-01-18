@@ -4,6 +4,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any
 from dotenv import load_dotenv
+import time
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage, AIMessage
@@ -13,6 +14,11 @@ from langgraph.graph.message import MessagesState
 from app.tools.create_patch_tool import create_patch_file
 from app.tools.read_file_tool import read_file
 from app.tools.check_dependency_tool import check_dependency
+
+from pydantic import BaseModel, Field
+from langchain.output_parsers import PydanticOutputParser, OutputFixingParser
+from langchain_core.exceptions import OutputParserException
+
 
 load_dotenv()
 
@@ -25,6 +31,13 @@ def log_console(title: str, data=None):
         print(data)
 
 
+class PatchOutput(BaseModel):
+    patched_code: str = Field(
+        description="Full fixed Python file. No markdown. No explanations."
+    )
+
+
+
 
 class PatchState(MessagesState):
     shared_memory: Dict[str, Any]
@@ -32,23 +45,35 @@ class PatchState(MessagesState):
 
 
 
-# base_model = ChatGoogleGenerativeAI(
-#     model="gemini-2.5-flash",
-#     api_key=os.getenv("GOOGLE_API_KEY"),
-#     temperature=0.2,
-#     streaming=False
-# )
-
-from langchain_groq import ChatGroq
-
-model = ChatGroq(
-    model="openai/gpt-oss-120b",
-    api_key=os.getenv("GROQ_API_KEY")
+model = ChatGoogleGenerativeAI(
+    model="gemini-2.5-flash",
+    api_key=os.getenv("GOOGLE_API_KEY"),
+    temperature=0.2,
+    streaming=False
 )
+
+# from langchain_groq import ChatGroq
+
+# model = ChatGroq(
+#     model="openai/gpt-oss-120b",
+#     api_key=os.getenv("GROQ_API_KEY")
+# )
 
 
 tools = [read_file, check_dependency, create_patch_file]
+
 model_with_tools = model.bind_tools(tools)
+
+
+patch_parser = PydanticOutputParser(pydantic_object=PatchOutput)
+
+patch_fixing_parser = OutputFixingParser.from_llm(
+    parser=patch_parser,
+    llm=model
+)
+
+
+
 
 
 SYSTEM_PROMPT = """You are a Precision Patch Generation Agent specialized in making MINIMAL, TARGETED code fixes.
@@ -143,6 +168,21 @@ CRITICAL RULES - NEVER VIOLATE:
 - Just the complete, fixed Python code
 - Start with imports, end with last function
 
+ OUTPUT FORMAT (STRICT JSON):
+
+Return ONLY this JSON:
+
+{
+  "patched_code": "<FULL FIXED PYTHON FILE CONTENT>"
+}
+
+Rules:
+- patched_code MUST contain entire file
+- No markdown
+- No explanations
+- No extra text
+
+
 ═══════════════════════════════════════════════════════════════════════════
 🔍 QUALITY CHECKLIST:
 ═══════════════════════════════════════════════════════════════════════════
@@ -166,7 +206,6 @@ Before outputting, verify:
 - When in doubt, preserve the original
 - **READ THE FILE FIRST, ALWAYS**"""
 
-
 def patch_llm_node(state: PatchState):
     iteration = state["shared_memory"].get("patch_iteration", 0) + 1
     state["shared_memory"]["patch_iteration"] = iteration
@@ -177,8 +216,8 @@ def patch_llm_node(state: PatchState):
 
     if not fix_result:
         fix_text = "No fix plan found in shared memory."
+        target_file = "N/A"
     else:
-
         files_to_modify = fix_result.get('files_to_modify', [])
         target_file = files_to_modify[0] if files_to_modify else 'N/A'
 
@@ -212,11 +251,9 @@ Safety Considerations:
 YOUR TASK:
 ═══════════════════════════════════════════════════════════════════════════
 
-1. **FIRST**: Call read_file tool with file_path="{target_file}"
-2. **THEN**: Apply the fix at line {rca_result.get('affected_line', 'N/A')}
-3. **FINALLY**: Output the COMPLETE file with ONLY that specific line changed
-
-**DO NOT SKIP STEP 1 - You MUST read the file first!**
+1. Call read_file tool with file_path="{target_file}" to get the complete original file
+2. After receiving the file content, apply the fix at line {rca_result.get('affected_line', 'N/A')}
+3. Output the COMPLETE fixed file in JSON format with ONLY that specific line changed
 """
 
     state["message_history"].append({
@@ -229,85 +266,59 @@ YOUR TASK:
     log_console(f"[ITER {iteration}] AGENT INPUT ({step_type})", fix_text)
 
     try:
+        # -------------------------------
+        # Sleep before LLM call to avoid RPM issues
+        # -------------------------------
+        time.sleep(30)
 
-        # -------------------------------------------------
-        # FORCE FILE READ ON FIRST ITERATION
-        # -------------------------------------------------
+        # BUILD COMPLETE CONVERSATION HISTORY
+        conversation = [SystemMessage(content=SYSTEM_PROMPT)]
+        
+        # Add ALL previous messages (AI responses + tool results)
+        conversation.extend(state["messages"])
+        
+        # Add current instruction
+        conversation.append(HumanMessage(content=fix_text))
 
-        if iteration == 1 and not state["shared_memory"].get("patch_file_loaded"):
-            log_console("📂 FORCING FILE READ", target_file)
+        # Call LLM with FULL context
+        response = model_with_tools.invoke(conversation)
 
-            return {
-                "messages": [
-                    HumanMessage(content=f"Call read_file with file_path='{target_file}'")
-                ],
-                "shared_memory": state["shared_memory"],
-                "message_history": state["message_history"]
-            }
-
-        response = model_with_tools.invoke([
-            SystemMessage(content=SYSTEM_PROMPT),
-            HumanMessage(content=fix_text)
-        ])
-
-        if not hasattr(response, 'content') or response.content is None:
-            error_msg = "LLM response blocked or missing content (likely safety filter)"
-            log_console("⚠️ ERROR", error_msg)
-
-            state["shared_memory"]["patch_result"] = {
-                "success": False,
-                "error": error_msg,
-                "patch_file_path": None
-            }
-
-            state["message_history"].append({
-                "event": "agent_output",
-                "agent": "PatchAgent",
-                "iteration": iteration,
-                "content": error_msg,
-                "tool_calls": None,
-                "patch_result": state["shared_memory"]["patch_result"]
-            })
-
-            return {
-                "messages": [AIMessage(content=error_msg)],
-                "shared_memory": state["shared_memory"],
-                "message_history": state["message_history"]
-            }
-
-        content = str(response.content) if response.content else ""
         tool_calls = getattr(response, "tool_calls", None)
 
-        log_console(f"[ITER {iteration}] AGENT OUTPUT ({step_type})", content[:500] if content else "No content")
-
+        # -------------------------------
+        # If LLM requests tool calls
+        # -------------------------------
         if tool_calls:
             log_console(f"[ITER {iteration}] TOOL REQUESTS", tool_calls)
-
-        if tool_calls:
-            state["message_history"].append({
-                "event": "agent_output",
-                "agent": "PatchAgent",
-                "iteration": iteration,
-                "content": content,
-                "tool_calls": tool_calls,
-                "patch_result": None
-            })
-
             return {
                 "messages": [response],
                 "shared_memory": state["shared_memory"],
                 "message_history": state["message_history"]
             }
 
-        patch_result = {}
-        files_to_modify = fix_result.get("files_to_modify", [])
+        # -------------------------------
+        # Extract raw patched code from structured output
+        # -------------------------------
+        raw_output = response.text if hasattr(response, 'content') else str(response)
 
-        if files_to_modify and content:
+        try:
+            structured_patch = patch_parser.parse(raw_output)
+        except OutputParserException:
+            structured_patch = patch_fixing_parser.parse(raw_output)
+
+        patched_code = structured_patch.patched_code.strip()
+
+        # -------------------------------
+        # Write patch file
+        # -------------------------------
+        patch_result = {}
+        if files_to_modify and patched_code:
             original_file = files_to_modify[0]
             try:
+                time.sleep(30)
                 patch_result = create_patch_file.invoke({
                     "original_file_path": original_file,
-                    "fixed_content": content
+                    "fixed_content": patched_code
                 })
                 state["shared_memory"]["patch_result"] = patch_result
                 log_console(f"[ITER {iteration}] ✅ PATCH CREATED", patch_result)
@@ -319,7 +330,7 @@ YOUR TASK:
         else:
             patch_result = {
                 "success": False,
-                "error": "No files to modify or empty content"
+                "error": "No files to modify or empty patch code"
             }
             state["shared_memory"]["patch_result"] = patch_result
 
@@ -327,7 +338,7 @@ YOUR TASK:
             "event": "agent_output",
             "agent": "PatchAgent",
             "iteration": iteration,
-            "content": content,
+            "content": patched_code,
             "tool_calls": None,
             "patch_result": patch_result
         })
@@ -339,24 +350,16 @@ YOUR TASK:
         }
 
     except Exception as e:
-
         error_msg = str(e)
 
-        # -------------------------------
-        # Handle API Quota / Rate Limit Gracefully
-        # -------------------------------
-
         if "429" in error_msg or "quota" in error_msg.lower():
-
             state["message_history"].append({
                 "event": "patch_llm_rate_limited",
                 "timestamp": datetime.now().isoformat(),
                 "iteration": iteration,
                 "error": error_msg
             })
-
             log_console("⚠️ RATE LIMIT", "Patch LLM throttled — retrying next loop")
-
             return {
                 "messages": [],
                 "shared_memory": state["shared_memory"],
@@ -364,24 +367,22 @@ YOUR TASK:
             }
 
         log_console("❌ PATCH FAILURE", error_msg)
-
         state["shared_memory"]["patch_result"] = {
             "success": False,
             "error": error_msg
         }
-
         state["message_history"].append({
             "event": "patch_generation_failed",
             "timestamp": datetime.now().isoformat(),
             "iteration": iteration,
             "error": error_msg
         })
-
         return {
             "messages": [],
             "shared_memory": state["shared_memory"],
             "message_history": state["message_history"]
         }
+
 
 
 def patch_tool_node(state: PatchState):
@@ -402,14 +403,44 @@ def patch_tool_node(state: PatchState):
         log_console(f"[TOOL EXECUTION] {tool_name}", tool_args)
 
         if tool_name == "read_file":
+            time.sleep(30)
             observation = read_file.invoke(tool_args)
             state["shared_memory"]["patch_file_loaded"] = True
+            
+            # Format cleanly for LLM
+            if observation.get("success"):
+                tool_content = f"""Successfully read file: {observation['file_path']}
+Total lines: {observation.get('lines', 'N/A')}
+
+File Content:
+{observation['content']}"""
+            else:
+                tool_content = f"Error: {observation.get('error', 'Unknown error')}"
 
         elif tool_name == "check_dependency":
+            time.sleep(30)
             observation = check_dependency.invoke(tool_args)
+            tool_content = str(observation)
+
+        elif tool_name == "create_patch_file":
+            time.sleep(30)
+            observation = create_patch_file.invoke(tool_args)
+            tool_content = json.dumps(observation, indent=2)
+            
+            # CRITICAL: Save patch result so workflow knows to end
+            if observation.get("success"):
+                state["shared_memory"]["patch_result"] = observation
+                log_console("✅ PATCH CREATED VIA TOOL CALL", observation)
+            else:
+                state["shared_memory"]["patch_result"] = {
+                    "success": False,
+                    "error": observation.get("error", "Patch creation failed")
+                }
+                log_console("❌ PATCH CREATION FAILED", observation)
 
         else:
             observation = f"Unknown tool: {tool_name}"
+            tool_content = observation
 
         state["message_history"].append({
             "event": "tool_call",
@@ -423,7 +454,7 @@ def patch_tool_node(state: PatchState):
 
         results.append(
             ToolMessage(
-                content=str(observation),
+                content=tool_content,
                 tool_call_id=tool_call.get("id")
             )
         )
@@ -436,16 +467,32 @@ def patch_tool_node(state: PatchState):
 
 
 def should_continue(state: PatchState):
-
     patch_result = state["shared_memory"].get("patch_result")
 
     if patch_result and patch_result.get("success") is True:
         log_console("🏁 FLOW CONTROL", "Patch created successfully — ending workflow")
         return END
 
-    if state["shared_memory"].get("patch_iteration", 0) >= 3:
+    iteration = state["shared_memory"].get("patch_iteration", 0)
+    
+    if iteration >= 5:
         log_console("⚠️ FLOW CONTROL", "Max patch attempts reached — stopping")
         return END
+
+    # Safety: Detect if LLM is stuck calling read_file repeatedly
+    if len(state["messages"]) >= 3:
+        read_file_calls = sum(
+            1 for msg in state["messages"] 
+            if hasattr(msg, "tool_calls") and msg.tool_calls 
+            and any(tc["name"] == "read_file" for tc in msg.tool_calls)
+        )
+        if read_file_calls >= 2:
+            log_console("⚠️ FLOW CONTROL", "LLM stuck - called read_file multiple times")
+            state["shared_memory"]["patch_result"] = {
+                "success": False,
+                "error": "Agent failed to generate patch after reading file"
+            }
+            return END
 
     if state["messages"]:
         last_message = state["messages"][-1]
