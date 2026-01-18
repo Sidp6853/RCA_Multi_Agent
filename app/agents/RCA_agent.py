@@ -44,19 +44,21 @@ class RCAOutput(BaseModel):
     
 
 
-# ---------------- MODEL ----------------
-model = ChatGoogleGenerativeAI(
-    model="gemini-2.5-flash",
-    api_key=os.getenv("GOOGLE_API_KEY"),
-    temperature=0,
-    streaming=False
+# # ---------------- MODEL ----------------
+# model = ChatGoogleGenerativeAI(
+#     model="gemini-2.5-flash",
+#     api_key=os.getenv("GOOGLE_API_KEY"),
+#     temperature=0,
+#     streaming=False
+# )
+
+from langchain_groq import ChatGroq
+
+model = ChatGroq(
+    model="openai/gpt-oss-120b",
+    api_key=os.getenv("GROQ_API_KEY")
 )
 
-
-rca_parser = PydanticOutputParser(pydantic_object=RCAOutput)
-
-
-# ---------------- PROMPT ----------------
 SYSTEM_PROMPT = """
 
 You are an expert Root Cause Analysis (RCA) Agent specializing in debugging and error analysis for APM (Application Performance Monitoring) codebases.
@@ -75,7 +77,7 @@ STRICT RULES - NEVER BREAK THESE:
 4. IGNORE framework/library paths (e.g., /usr/local/lib/, site-packages/) 
 5. Only analyze files you have successfully accessed with tools 
 
-REQUIRED PROCESS - FOLLOW STRICTLY:
+REQUIRED PROCESS:
 
 Step 1: UNDERSTAND PROJECT STRUCTURE 
   - Use get_project_directory to explore the codebase layout 
@@ -153,7 +155,6 @@ The application code attempts to [describe what the code is trying to do], but i
 4. ** Affected function**: [function_name]
 5. Model definition: [if applicable, describe the model/class definition and what fields it actually has]
 
-The issue is straightforward – [concise summary of the fix needed]. This is causing an [error_type] when the application tries to [describe the action]. No additional context from other parts of the codebase is needed to fix this specific issue.
 '''
 
 **FORMATTING RULES FOR ROOT CAUSE:**
@@ -187,7 +188,14 @@ The issue is straightforward – [concise summary of the fix needed]. This is ca
 
 TOOL USAGE STRATEGY: 
 
-START with get_project_directory when: 
+USE read_file when: 
+  - You've identified the specific file to analyze 
+  - Need to see actual code implementation 
+  - Verifying function/class definitions 
+  - Checking variable declarations and usage 
+  - Need to understand model definitions or class structures
+
+USE get_project_directory when: 
   - File paths in trace are unclear or incomplete 
   - You need to understand the project structure 
   - Looking for related files or modules 
@@ -198,13 +206,6 @@ USE check_dependency when:
   - AttributeError on imported library objects 
   - Suspect version mismatch or missing package 
   - Error message mentions package or module names 
-
-USE read_file when: 
-  - You've identified the specific file to analyze 
-  - Need to see actual code implementation 
-  - Verifying function/class definitions 
-  - Checking variable declarations and usage 
-  - Need to understand model definitions or class structures
 
 ERROR HANDLING:
   - If trace is missing or incomplete: Return "Insufficient error data to perform RCA."
@@ -219,21 +220,15 @@ REMEMBER:
   - Quality over speed - thorough multi-tool analysis is critical 
   - The root_cause field should be detailed enough that a developer can immediately understand and fix the issue
   - Be strategic: sometimes a quick dependency check saves reading multiple files
-
-
 """
 
 
-# ---------------- TOOLS ----------------
 tools = [read_file, get_project_directory, check_dependency]
 model_with_tools = model.bind_tools(tools)
 
 
-# ---------------- LLM NODE ----------------
-
-# Create parser with retry logic for robustness
 rca_parser = PydanticOutputParser(pydantic_object=RCAOutput)
-fixing_parser = OutputFixingParser.from_llm(parser=rca_parser, llm=model)  # Retries parsing errors
+fixing_parser = OutputFixingParser.from_llm(parser=rca_parser, llm=model)
 
 def rca_llm_node(state: RCAState):
     iteration = state["shared_memory"]["iteration"] + 1  
@@ -251,10 +246,9 @@ def rca_llm_node(state: RCAState):
     })
     log_console(f"[ITER {iteration}] AGENT INPUT ({step_type})", agent_input)
 
-    # Invoke model
     response = model_with_tools.invoke([SystemMessage(content=SYSTEM_PROMPT)] + state["messages"])
 
-    # Log agent output and tool calls (ORIGINAL logging)
+
     state["message_history"].append({
         "event": "agent_output",
         "agent": "RCA",
@@ -274,7 +268,7 @@ def rca_llm_node(state: RCAState):
             "message_history": state["message_history"]
         }
     
-    # Final RCA: parse and update shared_memory
+
     try:
         structured_rca = rca_parser.parse(response.text)
     except OutputParserException:
@@ -289,7 +283,7 @@ def rca_llm_node(state: RCAState):
     }
 
 
-# ---------------- TOOL NODE ----------------
+
 def tool_node(state: RCAState):
     results = []
     last_message = state["messages"][-1]
@@ -341,7 +335,6 @@ def tool_node(state: RCAState):
     }
 
 
-# ---------------- FLOW CONTROL ----------------
 def should_continue(state: RCAState):
     if state["shared_memory"]["iteration"] >= 5:
         return END
@@ -350,11 +343,11 @@ def should_continue(state: RCAState):
     if last_message.tool_calls:
         return "tools"
     
-    # Check if we have valid RCA result
+    
     if state["shared_memory"].get("rca_result"):
         return END
         
-    return "llm"  # Retry if no result yet
+    return "llm" 
 
 
 # ---------------- GRAPH ----------------
@@ -365,43 +358,3 @@ graph.add_edge(START, "llm")
 graph.add_conditional_edges("llm", should_continue, ["tools", END])
 graph.add_edge("tools", "llm")
 rca_app = graph.compile()
-
-
-# ---------------- MAIN ----------------
-if __name__ == "__main__":
-    os.environ["CODEBASE_ROOT"] = r"D:\Siddhi\projects\RCA-Agent\codebase"
-    trace_path = r"D:\Siddhi\projects\RCA-Agent\trace_1.json"
-
-    with open(trace_path, "r", encoding="utf-8") as f:
-        trace_data = f.read()
-
-    result = rca_app.invoke({
-        "messages": [HumanMessage(content=trace_data)],
-        "shared_memory": {
-            "iteration": 0,
-            "rca_result": None
-        },
-        "message_history": []
-    })
-
-    final_output = result["shared_memory"]["rca_result"]
-
-    # Log final result
-    result["message_history"].append({
-        "event": "final_result",
-        "iteration": result["shared_memory"]["iteration"],
-        "content": final_output
-    })
-    log_console("FINAL RCA OUTPUT", final_output)
-
-
-    os.makedirs("langgraph_rca_system/output", exist_ok=True)
-    with open("langgraph_rca_system/output/message_history.json", "w", encoding="utf-8") as f:
-        json.dump(result["message_history"], f, indent=2)
-    with open("langgraph_rca_system/output/shared_memory.json", "w", encoding="utf-8") as f:
-        json.dump(result["shared_memory"], f, indent=2)
-
-    log_console("FILES GENERATED", {
-        "message_history.json": "Saved",
-        "shared_memory.json": "Saved"
-    })

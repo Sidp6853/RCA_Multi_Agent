@@ -17,34 +17,24 @@ from app.agents.patch_agent import patch_app, PatchState
 load_dotenv()
 
 
-# ============================================================================
-# GLOBAL STATE FOR ORCHESTRATION
-# ============================================================================
 class OrchestratorState(TypedDict):
-    """
-    Global state that flows through the entire multi-agent workflow.
-    This consolidates all agent states into a single unified state.
-    """
-    # Input
+    
+
     trace_data: str
     codebase_root: str
     
-    # Shared memory (accumulates results from all agents)
+   
     shared_memory: Dict[str, Any]
     
-    # Message history (complete log of all agent interactions)
+   
     message_history: list
     
-    # Workflow metadata
+    
     workflow_status: str
     current_agent: str
 
-
-# ============================================================================
-# CONSOLE LOGGER
-# ============================================================================
 def log_console(title: str, data=None):
-    """Enhanced logger with timestamp"""
+    
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print("\n" + "=" * 80)
     print(f"[{timestamp}] {title}")
@@ -55,10 +45,6 @@ def log_console(title: str, data=None):
         else:
             print(data)
 
-
-# ============================================================================
-# AGENT WRAPPER NODES
-# ============================================================================
 
 def rca_agent_node(state: OrchestratorState) -> OrchestratorState:
     """
@@ -178,20 +164,20 @@ def patch_agent_node(state: OrchestratorState) -> OrchestratorState:
         "message_history": []
     }
     
-    # Execute Patch agent
+    
     patch_result = patch_app.invoke(patch_input)
     
-    # Extract results
+    
     patch_output = patch_result["shared_memory"].get("patch_result")
     
     if not patch_output:
         raise ValueError("Patch Agent failed to produce output")
     
-    # Update orchestrator state
+    #
     state["shared_memory"]["patch_result"] = patch_output
     state["shared_memory"]["patch_iteration"] = patch_result["shared_memory"]["patch_iteration"]
     
-    # Append Patch message history to global history
+    
     for msg in patch_result["message_history"]:
         msg["agent"] = "Patch Generation Agent"
         state["message_history"].append(msg)
@@ -207,24 +193,17 @@ def patch_agent_node(state: OrchestratorState) -> OrchestratorState:
     return state
 
 
-# ============================================================================
-# ORCHESTRATION GRAPH
-# ============================================================================
-
 def build_orchestration_graph():
-    """
-    Build the complete multi-agent orchestration graph
+   
     
-    Flow: START → RCA Agent → Fix Agent → Patch Agent → END
-    """
     graph = StateGraph(OrchestratorState)
     
-    # Add agent nodes
+    
     graph.add_node("rca_agent", rca_agent_node)
     graph.add_node("fix_agent", fix_agent_node)
     graph.add_node("patch_agent", patch_agent_node)
     
-    # Define linear workflow
+    
     graph.add_edge(START, "rca_agent")
     graph.add_edge("rca_agent", "fix_agent")
     graph.add_edge("fix_agent", "patch_agent")
@@ -233,20 +212,12 @@ def build_orchestration_graph():
     return graph.compile()
 
 
-# ============================================================================
-# MAIN EXECUTION
-# ============================================================================
-
 def main():
-    """
-    Main entry point for the multi-agent RCA system
-    """
-    # ========================================================================
-    # CONFIGURATION
-    # ========================================================================
+    
+    
     CODEBASE_ROOT = os.getenv("CODEBASE_ROOT", r"D:\Siddhi\projects\RCA-Agent\codebase")
     TRACE_FILE = os.getenv("TRACE_FILE", r"D:\Siddhi\projects\RCA-Agent\trace_1.json")
-    OUTPUT_DIR = Path("D:\Siddhi\projects\RCA-Agent\patches")
+    OUTPUT_DIR = Path("output")
     
     # Set environment variable for tools
     os.environ["CODEBASE_ROOT"] = CODEBASE_ROOT
@@ -260,9 +231,7 @@ def main():
         "output_dir": str(OUTPUT_DIR)
     })
     
-    # ========================================================================
-    # LOAD TRACE DATA
-    # ========================================================================
+    
     try:
         with open(TRACE_FILE, "r", encoding="utf-8") as f:
             trace_data = f.read()
@@ -271,9 +240,7 @@ def main():
         log_console("ERROR LOADING TRACE FILE", str(e))
         return
     
-    # ========================================================================
-    # INITIALIZE STATE
-    # ========================================================================
+   
     initial_state: OrchestratorState = {
         "trace_data": trace_data,
         "codebase_root": CODEBASE_ROOT,
@@ -293,9 +260,7 @@ def main():
         "current_agent": "None"
     }
     
-    # ========================================================================
-    # BUILD AND EXECUTE ORCHESTRATION GRAPH
-    # ========================================================================
+    
     try:
         orchestrator = build_orchestration_graph()
         
@@ -329,48 +294,19 @@ def main():
         final_state = initial_state
         final_state["workflow_status"] = "failed"
     
-    # ========================================================================
-    # SAVE OUTPUTS
-    # ========================================================================
-    
-    # 1. Save complete message history
+  
     message_history_path = OUTPUT_DIR / "message_history.json"
     with open(message_history_path, "w", encoding="utf-8") as f:
         json.dump(final_state["message_history"], f, indent=2, ensure_ascii=False)
     log_console("MESSAGE HISTORY SAVED", str(message_history_path))
     
-    # 2. Save final shared memory
+    
     shared_memory_path = OUTPUT_DIR / "shared_memory.json"
     with open(shared_memory_path, "w", encoding="utf-8") as f:
         json.dump(final_state["shared_memory"], f, indent=2, ensure_ascii=False)
     log_console("SHARED MEMORY SAVED", str(shared_memory_path))
     
-    # 3. Save individual agent outputs for easy reference
     
-    # RCA Output
-    if final_state["shared_memory"].get("rca_result"):
-        rca_output_path = OUTPUT_DIR / "rca_output.json"
-        with open(rca_output_path, "w", encoding="utf-8") as f:
-            json.dump(final_state["shared_memory"]["rca_result"], f, indent=2, ensure_ascii=False)
-        log_console("RCA OUTPUT SAVED", str(rca_output_path))
-    
-    # Fix Output
-    if final_state["shared_memory"].get("fix_result"):
-        fix_output_path = OUTPUT_DIR / "fix_output.json"
-        with open(fix_output_path, "w", encoding="utf-8") as f:
-            json.dump(final_state["shared_memory"]["fix_result"], f, indent=2, ensure_ascii=False)
-        log_console("FIX OUTPUT SAVED", str(fix_output_path))
-    
-    # Patch Output
-    if final_state["shared_memory"].get("patch_result"):
-        patch_output_path = OUTPUT_DIR / "patch_output.json"
-        with open(patch_output_path, "w", encoding="utf-8") as f:
-            json.dump(final_state["shared_memory"]["patch_result"], f, indent=2, ensure_ascii=False)
-        log_console("PATCH OUTPUT SAVED", str(patch_output_path))
-    
-    # ========================================================================
-    # FINAL SUMMARY
-    # ========================================================================
     log_console("=" * 80)
     log_console("WORKFLOW SUMMARY", {
         "status": final_state["workflow_status"],

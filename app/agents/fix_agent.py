@@ -35,12 +35,19 @@ class FixOutput(BaseModel):
     patch_plan: List[str]
     safety_considerations: str
 
-# ---------------- MODEL ----------------
-model = ChatGoogleGenerativeAI(
-    model="gemini-2.5-flash",
-    api_key=os.getenv("GOOGLE_API_KEY"),
-    temperature=0,
-    streaming=False
+# # ---------------- MODEL ----------------
+# model = ChatGoogleGenerativeAI(
+#     model="gemini-2.5-flash",
+#     api_key=os.getenv("GOOGLE_API_KEY"),
+#     temperature=0,
+#     streaming=False
+# )
+
+from langchain_groq import ChatGroq
+
+model = ChatGroq(
+    model="openai/gpt-oss-120b",
+    api_key=os.getenv("GROQ_API_KEY")
 )
 
 fix_parser = PydanticOutputParser(pydantic_object=FixOutput)
@@ -200,48 +207,3 @@ graph.add_edge(START, "llm")
 graph.add_conditional_edges("llm", should_continue, ["tools", END])
 graph.add_edge("tools", "llm")
 fix_app = graph.compile()
-
-# ---------------- MAIN ----------------
-if __name__ == "__main__":
-    # Load existing RCA shared memory and message history
-    shared_memory_path = "langgraph_rca_system/output/shared_memory.json"
-    message_history_path = "langgraph_rca_system/output/message_history.json"
-
-    with open(shared_memory_path, "r", encoding="utf-8") as f:
-        shared_memory = json.load(f)
-
-    with open(message_history_path, "r", encoding="utf-8") as f:
-        message_history = json.load(f)
-
-    # Initialize missing keys
-    if "fix_iteration" not in shared_memory:
-        shared_memory["fix_iteration"] = 0
-    if "fix_result" not in shared_memory:
-        shared_memory["fix_result"] = None
-
-    result = fix_app.invoke({
-        "messages": [],
-        "shared_memory": shared_memory,
-        "message_history": message_history
-    })
-
-    # Append final Fix result to message history
-    result["message_history"].append({
-        "event": "final_result",
-        "iteration": result["shared_memory"]["fix_iteration"],
-        "content": result["shared_memory"]["fix_result"]
-    })
-
-    log_console("FINAL FIX OUTPUT", result["shared_memory"]["fix_result"])
-
-    # Write back to same RCA files
-    with open(shared_memory_path, "w", encoding="utf-8") as f:
-        json.dump(result["shared_memory"], f, indent=2)
-
-    with open(message_history_path, "w", encoding="utf-8") as f:
-        json.dump(result["message_history"], f, indent=2)
-
-    log_console("FILES UPDATED", {
-        "message_history.json": "Updated",
-        "shared_memory.json": "Updated"
-    })
