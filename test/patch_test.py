@@ -64,47 +64,46 @@ def patch_llm_node(state: PatchState):
     fix_result = state["shared_memory"].get("fix_result", {})
 
     if not fix_result:
-        raise ValueError("Fix plan missing in shared memory")
+        fix_text = "No fix plan found in shared memory."
+        target_file = "N/A"
+    else:
+        files_to_modify = fix_result.get('files_to_modify', [])
+        target_file = files_to_modify[0] if files_to_modify else 'N/A'
 
-    files_to_modify = fix_result.get('files_to_modify', [])
-    if not files_to_modify:
-        raise ValueError("No files to modify in fix plan")
+        fix_text = f"""
+ROOT CAUSE ANALYSIS RESULTS:
 
-    target_file = files_to_modify[0]
+Error Type: {rca_result.get('error_type', 'N/A')}
+Error Message: {rca_result.get('error_message', 'N/A')}
+Affected File: {rca_result.get('affected_file', 'N/A')}
+Affected Line: {rca_result.get('affected_line', 'N/A')}
 
-    fix_text = f"""
-    ROOT CAUSE ANALYSIS RESULTS:
+Root Cause Analysis:
+{rca_result.get('root_cause', 'N/A')}
 
-    Error Type: {rca_result['error_type']}
-    Error Message: {rca_result['error_message']}
-    Affected File: {rca_result['affected_file']}
-    Affected Line: {rca_result['affected_line']}
+Fix Recommendation:
+{rca_result.get('fix_recommendation', 'N/A')}
 
-    Root Cause Analysis:
-    {rca_result['root_cause']}
+FIX PLAN:
 
-    FIX PLAN:
+Fix Summary: {fix_result.get('fix_summary', '')}
 
-    Fix Summary: {fix_result['fix_summary']}
+Files To Modify: {', '.join(files_to_modify)}
 
-    Files To Modify: {', '.join(files_to_modify)}
+Step-by-Step Patch Plan:
+{chr(10).join(f"{i+1}. {step}" for i, step in enumerate(fix_result.get("patch_plan", [])))}
 
-    Step-by-Step Patch Plan:
-    {chr(10).join(f"{i+1}. {step}" for i, step in enumerate(fix_result['patch_plan']))}
+Safety Considerations:
+{fix_result.get('safety_considerations', '')}
 
-    Safety Considerations:
-    {fix_result['safety_considerations']}
+═══════════════════════════════════════════════════════════════════════════
+YOUR TASK:
+═══════════════════════════════════════════════════════════════════════════
 
-    ═══════════════════════════════════════════════════════════════════════════
-    YOUR TASK:
-    ═══════════════════════════════════════════════════════════════════════════
-
-    1. Call read_file tool with file_path="{target_file}" to get the complete original file
-    2. After receiving the file content, apply the fix at line {rca_result['affected_line']}
-    3. Output the COMPLETE fixed file in JSON format with ONLY that specific line changed
-    """
-
-
+1. Call read_file tool with file_path="{target_file}" to get the complete original file
+2. After receiving the file content, apply the fix at line {rca_result.get('affected_line', 'N/A')}
+3. Output the COMPLETE fixed file in JSON format with ONLY that specific line changed
+"""
 
     logger.info(f"[ITER {iteration}] AGENT INPUT ({step_type}): {fix_text}")
 
@@ -116,14 +115,14 @@ def patch_llm_node(state: PatchState):
     }
 
     try:
-        time.sleep(15)
+        time.sleep(30)
 
         # BUILD COMPLETE CONVERSATION HISTORY
         conversation = [SystemMessage(content=SYSTEM_PROMPT)]
         conversation.extend(state["messages"])
         conversation.append(HumanMessage(content=fix_text))
 
-        time.sleep(15)
+        # Call LLM with FULL context
         response = model_with_tools.invoke(conversation)
         tool_calls = getattr(response, "tool_calls", None)
 
@@ -158,7 +157,7 @@ def patch_llm_node(state: PatchState):
         if files_to_modify and patched_code:
             original_file = files_to_modify[0]
             try:
-                time.sleep(15)
+                time.sleep(30)
                 patch_result = create_patch_file.invoke({
                     "original_file_path": original_file,
                     "fixed_content": patched_code
@@ -238,7 +237,7 @@ def patch_tool_node(state: PatchState):
         logger.info(f"[TOOL EXECUTION] {tool_name} | Input: {tool_args}")
 
         if tool_name == "read_file":
-            time.sleep(15)
+            time.sleep(30)
             observation = read_file.invoke(tool_args)
             
             if observation.get("success"):
@@ -251,12 +250,12 @@ File Content:
                 tool_content = f"Error: {observation.get('error', 'Unknown error')}"
 
         elif tool_name == "check_dependency":
-            time.sleep(15)
+            time.sleep(30)
             observation = check_dependency.invoke(tool_args)
             tool_content = str(observation)
 
         elif tool_name == "create_patch_file":
-            time.sleep(15)
+            time.sleep(30)
             observation = create_patch_file.invoke(tool_args)
             tool_content = json.dumps(observation, indent=2)
             
@@ -291,17 +290,42 @@ File Content:
         "message_history": history_entries
     }
 
+
 def should_continue(state: PatchState):
-    if state["shared_memory"].get("iteration", 0) >= 5:
+    patch_result = state["shared_memory"].get("patch_result")
+
+    if patch_result and patch_result.get("success") is True:
+        logger.info("🏁 FLOW CONTROL: Patch created successfully — ending workflow")
         return END
+
+    iteration = state["shared_memory"].get("patch_iteration", 0)
     
-    last_message = state["messages"][-1]
-    if getattr(last_message, "tool_calls", None):
-        return "tools"
-    
-    if state["shared_memory"].get("patch_result"):
+    if iteration >= 5:
+        logger.warning("⚠️ FLOW CONTROL: Max patch attempts reached — stopping")
         return END
-        
+
+    # Safety: Detect if LLM is stuck calling read_file repeatedly
+    if len(state["messages"]) >= 3:
+        read_file_calls = sum(
+            1 for msg in state["messages"] 
+            if hasattr(msg, "tool_calls") and msg.tool_calls 
+            and any(tc["name"] == "read_file" for tc in msg.tool_calls)
+        )
+        if read_file_calls >= 2:
+            logger.warning("⚠️ FLOW CONTROL: LLM stuck - called read_file multiple times")
+            state["shared_memory"]["patch_result"] = {
+                "success": False,
+                "error": "Agent failed to generate patch after reading file"
+            }
+            return END
+
+    if state["messages"]:
+        last_message = state["messages"][-1]
+        if getattr(last_message, "tool_calls", None):
+            logger.info("🔧 FLOW CONTROL: Routing to tools")
+            return "tools"
+
+    logger.info("🔄 FLOW CONTROL: Retrying patch generation")
     return "llm"
 
 
@@ -313,3 +337,98 @@ graph.add_conditional_edges("llm", should_continue, ["tools", "llm", END])
 graph.add_edge("tools", "llm")
 patch_app = graph.compile()
 
+
+def main():
+    # Configuration
+    CODEBASE_ROOT = os.getenv("CODEBASE_ROOT", r"D:\Siddhi\projects\RCA-Agent\codebase")
+    TRACE_FILE = os.getenv("TRACE_FILE", r"D:\Siddhi\projects\RCA-Agent\trace_1.json")
+    OUTPUT_DIR = Path("output")
+    
+    # Set environment variable for tools
+    os.environ["CODEBASE_ROOT"] = CODEBASE_ROOT
+    
+    # Create output directory
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    
+    logger.info(f"Patch Agent Started - Codebase: {CODEBASE_ROOT}, Trace: {TRACE_FILE}")
+    
+    # Load trace file
+    try:
+        with open(TRACE_FILE, "r", encoding="utf-8") as f:
+            trace_data = f.read()
+        logger.info(f"Trace file loaded - Size: {len(trace_data)} bytes")
+    except Exception as e:
+        logger.error(f"Failed to load trace file: {str(e)}")
+        return
+    
+    # Load RCA and Fix results from previous executions
+    fix_output_path = OUTPUT_DIR / "fix_shared_memory.json"
+    try:
+        with open(fix_output_path, "r", encoding="utf-8") as f:
+            fix_shared_memory = json.load(f)
+        rca_result = fix_shared_memory.get("rca_result")
+        fix_result = fix_shared_memory.get("fix_result")
+        
+        if not rca_result or not fix_result:
+            logger.error("No RCA or Fix result found in shared memory")
+            return
+        logger.info("RCA and Fix results loaded successfully")
+    except Exception as e:
+        logger.error(f"Failed to load Fix result: {str(e)}")
+        return
+    
+    # Initialize Patch state
+    initial_state: PatchState = {
+        "messages": [HumanMessage(content="Generate patch using Fix Plan and tools")],
+        "shared_memory": {
+            "rca_result": rca_result,
+            "fix_result": fix_result
+        },
+        "message_history": []
+    }
+    
+    # Execute Patch workflow
+    try:
+        logger.info("Starting Patch generation...")
+        final_state = patch_app.invoke(initial_state)
+        logger.info("Patch generation completed successfully")
+        
+    except Exception as e:
+        logger.error(f"Patch generation failed: {str(e)}")
+        return
+    
+    # Save results
+    message_history_path = OUTPUT_DIR / "patch_message_history.json"
+    with open(message_history_path, "w", encoding="utf-8") as f:
+        json.dump(final_state["message_history"], f, indent=2, ensure_ascii=False)
+    logger.info(f"Message history saved: {message_history_path}")
+    
+    shared_memory_path = OUTPUT_DIR / "patch_shared_memory.json"
+    with open(shared_memory_path, "w", encoding="utf-8") as f:
+        json.dump(final_state["shared_memory"], f, indent=2, ensure_ascii=False)
+    logger.info(f"Shared memory saved: {shared_memory_path}")
+    
+    # Display results
+    if final_state["shared_memory"].get("patch_result"):
+        patch_result = final_state["shared_memory"]["patch_result"]
+        logger.info(f"\n{'='*60}\nPATCH RESULT:\n{'='*60}")
+        logger.info(f"Success: {patch_result.get('success')}")
+        
+        if patch_result.get('success'):
+            logger.info(f"Patch File: {patch_result.get('patch_file')}")
+            logger.info(f"Original File: {patch_result.get('original_file')}")
+            logger.info(f"Backup File: {patch_result.get('backup_file')}")
+        else:
+            logger.info(f"Error: {patch_result.get('error')}")
+        logger.info(f"{'='*60}")
+    
+    print(f"\n✅ Patch Agent execution completed!")
+    print(f"📁 Output directory: {OUTPUT_DIR}")
+    print(f"📄 Message History: {message_history_path}")
+    print(f"📄 Shared Memory: {shared_memory_path}")
+    if final_state["shared_memory"].get("patch_result", {}).get("success"):
+        print(f"🔧 Patch File: {final_state['shared_memory']['patch_result'].get('patch_file')}\n")
+
+
+if __name__ == "__main__":
+    main()

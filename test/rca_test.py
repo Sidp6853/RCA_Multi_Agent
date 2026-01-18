@@ -7,7 +7,6 @@ from typing import Dict, Any, Annotated
 from pydantic import BaseModel, Field
 from operator import add
 import logging
-import time
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
@@ -29,6 +28,15 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+
+
+def log_console(title: str, data=None):
+    print("\n" + "=" * 60)
+    print(title)
+    print("=" * 60)
+    if data is not None:
+        print(data)
 
 
 class RCAState(MessagesState):
@@ -75,7 +83,7 @@ def rca_llm_node(state: RCAState) -> Dict[str, Any]:
         "content": agent_input
     }
 
-    time.sleep(15)
+    
     response = model_with_tools.invoke([SystemMessage(content=SYSTEM_PROMPT)] + state["messages"])
     
     history_entry_out = {
@@ -126,12 +134,9 @@ def tool_node(state: RCAState) -> Dict[str, Any]:
         tool_args = tool_call["args"]
         
         if tool_name == "read_file":
-            time.sleep(15)
             observation = read_file.invoke(tool_args)
-            time.sleep(15)
         elif tool_name == "get_project_directory":
             observation = get_project_directory.invoke(tool_args)
-            time.sleep(15)
         elif tool_name == "check_dependency":
             observation = check_dependency.invoke(tool_args)
         else:

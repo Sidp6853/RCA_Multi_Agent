@@ -24,13 +24,13 @@ def read_file(file_path: str) -> Dict[str, Any]:
                 "file_path": file_path
             }
 
-        # Normalize linux container path
-        if file_path.startswith("/usr/srv/app"):  
-            relative_path = file_path.replace("/usr/srv/app", "").lstrip("/")
-            abs_path = os.path.join(codebase_root, "app", relative_path)
-        else:
+        # # Normalize linux container path ---> Added Custom Logic here as the trace is from different system. 
+        # if file_path.startswith("/usr/srv/app"):  
+        #     relative_path = file_path.replace("/usr/srv/app", "").lstrip("/")
+        #     abs_path = os.path.join(codebase_root, "app", relative_path)
+        # else:
 
-            abs_path = os.path.join(codebase_root, file_path.lstrip("/"))
+        abs_path = os.path.join(codebase_root, file_path.lstrip("/"))
 
         abs_path = os.path.abspath(abs_path)
 
