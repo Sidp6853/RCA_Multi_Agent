@@ -165,7 +165,8 @@ def tool_node(state: FixState) -> Dict[str, Any]:
         
         tool_results.append(ToolMessage(
             content=str(observation),
-            tool_call_id=tool_call["id"]
+            tool_call_id=tool_call["id"],
+            name=tool_name
         ))
     
     return {

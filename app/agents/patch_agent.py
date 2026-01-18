@@ -95,9 +95,9 @@ def patch_llm_node(state: PatchState):
     Safety Considerations:
     {fix_result['safety_considerations']}
 
-    ═══════════════════════════════════════════════════════════════════════════
+
     YOUR TASK:
-    ═══════════════════════════════════════════════════════════════════════════
+    
 
     1. Call read_file tool with file_path="{target_file}" to get the complete original file
     2. After receiving the file content, apply the fix at line {rca_result['affected_line']}
@@ -166,7 +166,7 @@ def patch_llm_node(state: PatchState):
                 logger.info(f"[ITER {iteration}] ✅ PATCH CREATED: {patch_result}")
             except Exception as e:
                 error_msg = f"Error creating patch file: {str(e)}"
-                logger.error(f"❌ PATCH CREATION ERROR: {error_msg}")
+                logger.error(f"PATCH CREATION ERROR: {error_msg}")
                 patch_result = {"success": False, "error": error_msg}
         else:
             patch_result = {
@@ -196,7 +196,7 @@ def patch_llm_node(state: PatchState):
 
     except Exception as e:
         error_msg = str(e)
-        logger.error(f"❌ PATCH FAILURE: {error_msg}")
+        logger.error(f"PATCH FAILURE: {error_msg}")
 
         history_entry_error = {
             "event": "patch_generation_failed",
@@ -263,7 +263,7 @@ File Content:
             if observation.get("success"):
                 logger.info(f"✅ PATCH CREATED VIA TOOL CALL: {observation}")
             else:
-                logger.error(f"❌ PATCH CREATION FAILED: {observation}")
+                logger.error(f"PATCH CREATION FAILED: {observation}")
 
         else:
             observation = f"Unknown tool: {tool_name}"

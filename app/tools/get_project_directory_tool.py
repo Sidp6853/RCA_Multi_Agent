@@ -1,5 +1,4 @@
 import os
-import json
 from langchain.tools import tool
 from pathlib import Path
 from typing import Dict, Any
@@ -18,7 +17,7 @@ def get_project_directory(relative_path: str = ".") -> Dict[str, Any]:
         Dict with hierarchical tree structure
     """
     try:
-        codebase_root = os.environ.get("CODEBASE_ROOT", "./codebase")
+        codebase_root = os.environ.get("CODEBASE_ROOT")
         root_path = Path(codebase_root) / relative_path
         
         if not root_path.exists():
@@ -27,22 +26,24 @@ def get_project_directory(relative_path: str = ".") -> Dict[str, Any]:
                 "error": f"Directory not found: {relative_path}"
             }
         
-        def build_tree(directory: Path) -> Dict:
-            """Build tree structure using pathlib's iterdir()"""
+        def build_tree(directory: Path, depth=0, max_depth=5) -> Dict:
+            if depth > max_depth:
+                return "max_depth_reached"
+            
             tree = {}
             
             try:
-                # Use iterdir() to get immediate contents
+                
                 items = sorted(directory.iterdir(), key=lambda x: (not x.is_dir(), x.name))
                 
                 for item in items:
-                    # Skip hidden files
+                    
                     if item.name.startswith('.'):
                         continue
                     
                     if item.is_dir():
-                        # Recursively build subtree
-                        tree[f"{item.name}/"] = build_tree(item)
+                        tree[f"{item.name}/"] = build_tree(item, depth + 1, max_depth)
+
                     else:
                         # Just store filename
                         tree[item.name] = "file"
@@ -62,3 +63,6 @@ def get_project_directory(relative_path: str = ".") -> Dict[str, Any]:
             "success": False,
             "error": str(e)
         }
+    
+
+

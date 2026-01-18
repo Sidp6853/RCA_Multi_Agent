@@ -68,6 +68,7 @@ def rca_llm_node(state: RCAState) -> Dict[str, Any]:
     agent_input = state["messages"][-1].content
     logger.info(f"[ITER {iteration}] AGENT INPUT ({step_type}): {agent_input}")
 
+
     history_entry = {
         "event": "agent_input",
         "agent": "RCA",
@@ -152,7 +153,9 @@ def tool_node(state: RCAState) -> Dict[str, Any]:
         
         tool_results.append(ToolMessage(
             content=str(observation),
-            tool_call_id=tool_call["id"]
+            tool_call_id=tool_call["id"],
+            name=tool_name
+
         ))
     
     return {

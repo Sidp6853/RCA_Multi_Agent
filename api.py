@@ -11,18 +11,9 @@ import uvicorn
 
 from dotenv import load_dotenv
 
-# Load env
 load_dotenv()
 
-# Import orchestrator builder + state
 from app.main import build_orchestration_graph, OrchestratorState
-
-
-# -------------------------
-# FastAPI App Init
-# -------------------------
-
-
 
 app = FastAPI(
     title="Multi-Agent RCA System API",
@@ -39,37 +30,20 @@ app.add_middleware(
 )
 
 
-# -------------------------
-# Load Orchestrator ONCE
-# -------------------------
-
-print("🚀 Initializing Orchestrator Graph...")
+print("Initializing Orchestrator Graph...")
 orchestrator = build_orchestration_graph()
-print("✅ Orchestrator Ready")
+print("Orchestrator Ready")
 
-
-# -------------------------
-# Config
-# -------------------------
 
 OUTPUT_DIR = Path("output")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 CODEBASE_ROOT = os.getenv(
-    "CODEBASE_ROOT",
-    r"D:\Siddhi\projects\RCA-Agent\codebase"
-)
-
-os.environ["CODEBASE_ROOT"] = CODEBASE_ROOT
-
-
-# -------------------------
-# Request / Response Models
-# -------------------------
+    "CODEBASE_ROOT")
 
 class AnalyzeRequest(BaseModel):
-    trace_file_path: Optional[str] = None   # Use existing trace file
-    trace_text: Optional[str] = None        # Or raw trace content
+    trace_file_path: Optional[str] = None   
+    trace_text: Optional[str] = None        
 
 
 class AnalyzeResponse(BaseModel):
@@ -79,9 +53,6 @@ class AnalyzeResponse(BaseModel):
     error: Optional[str] = None
 
 
-# -------------------------
-# Health Check
-# -------------------------
 
 @app.get("/")
 def root():
@@ -100,9 +71,6 @@ def status():
     }
 
 
-# -------------------------
-# MAIN WORKFLOW ENDPOINT
-# -------------------------
 
 @app.get("/")
 def home():
@@ -115,9 +83,7 @@ async def analyze(request: AnalyzeRequest):
     """
 
     try:
-        # -------------------------
-        # Load Trace Data
-        # -------------------------
+       
 
         if request.trace_text:
             trace_data = request.trace_text
@@ -138,9 +104,7 @@ async def analyze(request: AnalyzeRequest):
                 detail="Provide either trace_text or trace_file_path"
             )
 
-        # -------------------------
-        # Build Initial State
-        # -------------------------
+     
 
         initial_state: OrchestratorState = {
             "trace_data": trace_data,
@@ -159,15 +123,11 @@ async def analyze(request: AnalyzeRequest):
             "current_agent": "None"
         }
 
-        # -------------------------
-        # Execute Workflow
-        # -------------------------
+        
 
         final_state = orchestrator.invoke(initial_state)
 
-        # -------------------------
-        # Save Outputs
-        # -------------------------
+       
 
         history_file = OUTPUT_DIR / "message_history.json"
         memory_file = OUTPUT_DIR / "shared_memory.json"
@@ -178,9 +138,7 @@ async def analyze(request: AnalyzeRequest):
         with open(memory_file, "w", encoding="utf-8") as f:
             json.dump(final_state["shared_memory"], f, indent=2, default=str)
 
-        # -------------------------
-        # Prepare API Response
-        # -------------------------
+      
 
         response_payload = {
             "workflow_status": final_state["workflow_status"],
@@ -206,9 +164,6 @@ async def analyze(request: AnalyzeRequest):
         )
 
 
-# -------------------------
-# RESULTS ENDPOINT
-# -------------------------
 
 @app.get("/results")
 def get_latest_results():
@@ -239,13 +194,9 @@ def get_latest_results():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# -------------------------
-# Server Runner
-# -------------------------
-
 if __name__ == "__main__":
     uvicorn.run(
-        "app.api:app",
+        "api:app",
         host="0.0.0.0",
         port=8000,
         reload=True

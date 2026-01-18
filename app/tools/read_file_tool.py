@@ -24,17 +24,13 @@ def read_file(file_path: str) -> Dict[str, Any]:
                 "file_path": file_path
             }
 
-        # # Normalize linux container path ---> Added Custom Logic here as the trace is from different system. 
-        # if file_path.startswith("/usr/srv/app"):  
-        #     relative_path = file_path.replace("/usr/srv/app", "").lstrip("/")
-        #     abs_path = os.path.join(codebase_root, "app", relative_path)
-        # else:
+    
 
         abs_path = os.path.join(codebase_root, file_path.lstrip("/"))
 
         abs_path = os.path.abspath(abs_path)
 
-        # Check if file exists
+        # Checking if file exists or not 
         if not os.path.isfile(abs_path):
             return {
                 "success": False,
@@ -42,13 +38,13 @@ def read_file(file_path: str) -> Dict[str, Any]:
                 "file_path": file_path
             }
 
-        # Read file content
+        #Reading the file content 
         with open(abs_path, "r", encoding="utf-8") as f:
             content = f.read()
             
 
         
-        # Return structured response
+        
         return {
             "success": True,
             "file_path": file_path,

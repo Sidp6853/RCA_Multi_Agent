@@ -79,9 +79,7 @@ CRITICAL RULES - NEVER VIOLATE:
 - All error handling
 - All variable names (except the one being fixed)
 
-═══════════════════════════════════════════════════════════════════════════
-📤 OUTPUT FORMAT:
-═══════════════════════════════════════════════════════════════════════════
+OUTPUT FORMAT:
 
 - Pure Python code only
 - No markdown code fences (no ```)
@@ -105,21 +103,20 @@ Rules:
 - No extra text
 
 
-═══════════════════════════════════════════════════════════════════════════
-🔍 QUALITY CHECKLIST:
-═══════════════════════════════════════════════════════════════════════════
+
+QUALITY CHECKLIST:
+
 
 Before outputting, verify:
-✓ Did I call read_file tool to read the original file?
-✓ Does my output have ALL functions from the original?
-✓ Does my output have ALL imports from the original?
-✓ Are function signatures IDENTICAL (async, params, etc.)?
-✓ Did I change ONLY the line(s) specified in Fix Plan?
-✓ Is the file complete (same length as original ±1 line)?
+Did I call read_file tool to read the original file?
+Does my output have ALL functions from the original?
+Does my output have ALL imports from the original?
+Are function signatures IDENTICAL (async, params, etc.)?
+Did I change ONLY the line(s) specified in Fix Plan?
+Is the file complete (same length as original ±1 line)?
 
-═══════════════════════════════════════════════════════════════════════════
-💡 REMEMBER:
-═══════════════════════════════════════════════════════════════════════════
+
+REMEMBER:
 
 - You are doing SURGERY, not RECONSTRUCTION
 - Change the tumor, keep the patient
