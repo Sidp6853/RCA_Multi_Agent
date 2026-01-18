@@ -41,11 +41,12 @@ def get_project_directory(relative_path: str = ".") -> Dict[str, Any]:
                     if item.name.startswith('.'):
                         continue
                     
+                    #For storing folder/directory name 
                     if item.is_dir():
                         tree[f"{item.name}/"] = build_tree(item, depth + 1, max_depth)
 
                     else:
-                        # Just store filename
+                        #For storing files
                         tree[item.name] = "file"
             
             except PermissionError:

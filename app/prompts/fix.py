@@ -36,3 +36,5 @@ IMPORTANT:
 - Reference specific line numbers, variable names, and exact changes
 - Ensure files_to_modify contains ONLY the affected file from RCA
 """
+
+#For the Fix Agent the main hallucination faced was passing of the wrong file in the Fix Plan which led to generating wrong patch. 

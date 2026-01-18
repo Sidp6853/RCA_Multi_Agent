@@ -161,3 +161,6 @@ REMEMBER:
   - The root_cause field should be detailed enough that a developer can immediately understand and fix the issue
   - Be strategic: sometimes a quick dependency check saves reading multiple files
 """
+
+#The RCA Agent prompt is bit longer compared to the other prompts as some hallucinations and no tool calling as well as
+#multiple tool calling challenges were faced during development. 

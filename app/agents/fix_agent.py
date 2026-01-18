@@ -1,25 +1,19 @@
-import os
-import json
-from pathlib import Path
-from dotenv import load_dotenv
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Annotated
 from pydantic import BaseModel
+import time
+import logging
+from operator import add
+
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import MessagesState
-from langchain.output_parsers import PydanticOutputParser, OutputFixingParser
-from langchain_core.exceptions import OutputParserException 
-import time
-import logging
-from operator import add
-from typing import Annotated
 
 from app.tools.read_file_tool import read_file
 from app.prompts.fix import SYSTEM_PROMPT
+from app.config.Model import ModelConfig
 
 
-load_dotenv()
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -31,27 +25,27 @@ class FixState(MessagesState):
     shared_memory: Annotated[Dict[str, Any], lambda x, y: {**(x or {}), **y}]  
     message_history: Annotated[list, add]
 
+#Output Schema
 class FixOutput(BaseModel):
     fix_summary: str
     files_to_modify: List[str]
     patch_plan: List[str]
     safety_considerations: str
 
-
-model = ChatGoogleGenerativeAI(
-    model="gemini-2.5-flash",
-    api_key=os.getenv("GOOGLE_API_KEY"),
-    temperature=0,
-    streaming=False
-)
-
-
-fix_parser = PydanticOutputParser(pydantic_object=FixOutput)
-fixing_parser = OutputFixingParser.from_llm(parser=fix_parser, llm=model)  # retries parsing errors
+    class Config:
+        extra = "forbid"
+        
 
 tools = [read_file]
-model_with_tools = model.bind_tools(tools)
+#Tool Binding 
+base_model = ModelConfig.get_base_model()
+model_with_tools = base_model.bind_tools(tools)
 
+
+model_with_structured_output = base_model.with_structured_output(
+    FixOutput,
+    include_raw=True
+)
 
 def fix_llm_node(state: FixState):
     iteration = state["shared_memory"].get("iteration", 0) + 1 
@@ -61,10 +55,8 @@ def fix_llm_node(state: FixState):
     if not rca_result:
         raise ValueError("RCA output missing in shared memory")
 
-    
     agent_input = f"""
 Root Cause Analysis:
-Here's the Root Cause Analysis
 
 Error Type: {rca_result['error_type']}
 Error Message: {rca_result['error_message']}
@@ -73,15 +65,9 @@ Affected File: {rca_result['affected_file']}
 Affected Line: {rca_result['affected_line']}
 
 You MUST use the Affected File and Affected Line provided in RCA.
-DO NOT introduce new files.
-files_to_modify MUST contain ONLY the RCA affected file.
-
-
-Generate Fix Plan:
-
 """
 
-    logger.info(f"[ITER {iteration}] AGENT INPUT ({step_type}): {agent_input}")
+    logger.info(f"[ITER {iteration}] AGENT INPUT ({step_type})")
 
     history_entry = {
         "event": "agent_input",
@@ -90,49 +76,88 @@ Generate Fix Plan:
         "content": agent_input
     }
 
-    time.sleep(15)
-    response = model_with_tools.invoke([SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=agent_input)])
+    try:
+        conversation = [
+            SystemMessage(content=SYSTEM_PROMPT),
+            HumanMessage(content=agent_input)
+        ]
 
-    history_entry_out = {
-        "event": "agent_output",
-        "agent": "Fix",
-        "iteration": iteration,
-        "content": response.text,
-        "tool_calls": getattr(response, "tool_calls", [])
-    }
+        time.sleep(15)
+        
+        #Check for tools first
+        tool_check = model_with_tools.invoke(conversation)
+        
+        if getattr(tool_check, "tool_calls", None):
+            logger.info(f"[ITER {iteration}] Tool calls requested")
+            return {
+                "messages": [tool_check],
+                "shared_memory": {"iteration": iteration},
+                "message_history": [history_entry]
+            }
+        
+        # No tools → structured output
+        time.sleep(15)
+        result = model_with_structured_output.invoke(conversation)
+        
+        # Handle structured response
+        if isinstance(result, dict) and "parsed" in result:
+            structured_fix = result["parsed"]
+            raw_response = result.get("raw", result)
+        else:
+            structured_fix = result
+            raw_response = result
+        
+        # Force affected_file from RCA as Agent was hallucinating without this 
+        fix_data = structured_fix.model_dump()
+        fix_data["files_to_modify"] = [rca_result["affected_file"]]
+        
+        logger.info(f"[ITER {iteration}]  FIX PLAN: {fix_data['fix_summary']}")
+
+        history_entry_out = {
+            "event": "agent_output",
+            "agent": "Fix",
+            "iteration": iteration,
+            "fix_result": fix_data
+        }
+
+        shared_update = {
+            "iteration": iteration,
+            "fix_result": fix_data
+        }
+
+        return {
+            "messages": [raw_response],
+            "shared_memory": shared_update,
+            "message_history": [history_entry, history_entry_out]
+        }
+    
+    except Exception as e:
+        logger.error(f"[ITER {iteration}] FIX FAILED: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        
+        # Fallback fix plan
+        fallback_fix = {
+            "fix_summary": "Analysis failed",
+            "files_to_modify": [rca_result["affected_file"]],
+            "patch_plan": ["Manual fix required"],
+            "safety_considerations": str(e)
+        }
+        
+        return {
+            "messages": [],
+            "shared_memory": {
+                "iteration": iteration,
+                "fix_result": fallback_fix
+            },
+            "message_history": [{
+                "event": "fix_failed",
+                "iteration": iteration,
+                "error": str(e)
+            }]
+        }
 
 
-    shared_update = {"iteration": iteration}
-
-    if not getattr(response, "tool_calls", []):
-        try:
-            structured_fix = fix_parser.parse(response.text)
-            fix_data = structured_fix.model_dump()
-            fix_data["files_to_modify"] = [rca_result["affected_file"]]
-            shared_update["fix_result"] = fix_data
-        except OutputParserException:
-            try:
-                structured_fix = fixing_parser.parse(response.content)
-                fix_data = structured_fix.model_dump()
-                fix_data["files_to_modify"] = [rca_result["affected_file"]]
-                shared_update["fix_result"] = fix_data
-            except Exception as e:
-                logger.error(f"[ITER {iteration}] PARSING FAILED: {str(e)}")
-                shared_update["fix_result"] = {
-                    "fix_summary": "Failed to parse fix output",
-                    "files_to_modify": [rca_result["affected_file"]],
-                    "patch_plan": [],
-                    "safety_considerations": f"Parsing error: {str(e)}"
-                }
-
-
-
-
-    return {
-        "messages": [response],
-        "shared_memory": shared_update,
-        "message_history": [history_entry, history_entry_out]
-    }
 
 def tool_node(state: FixState) -> Dict[str, Any]:
     tool_results = []

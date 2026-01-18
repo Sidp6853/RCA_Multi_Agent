@@ -24,8 +24,6 @@ def read_file(file_path: str) -> Dict[str, Any]:
                 "file_path": file_path
             }
 
-    
-
         abs_path = os.path.join(codebase_root, file_path.lstrip("/"))
 
         abs_path = os.path.abspath(abs_path)
@@ -41,9 +39,7 @@ def read_file(file_path: str) -> Dict[str, Any]:
         #Reading the file content 
         with open(abs_path, "r", encoding="utf-8") as f:
             content = f.read()
-            
-
-        
+             
         
         return {
             "success": True,

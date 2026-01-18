@@ -30,13 +30,13 @@ Generate a patch that preserves 100% of the original code structure, logic, impo
 - Locate the exact line(s) in the original code
 - Make ONLY the specified change
 - Keep EVERYTHING ELSE IDENTICAL:
-  ✓ All imports (every single one)
-  ✓ All function definitions (async/sync keywords, names, parameters)
-  ✓ All other lines of code (unchanged functions, logic, formatting)
-  ✓ All comments and docstrings
-  ✓ All whitespace and indentation
-  ✓ All variable names (except the one being fixed)
-  ✓ All business logic
+  All imports (every single one)
+  All function definitions (async/sync keywords, names, parameters)
+  All other lines of code (unchanged functions, logic, formatting)
+  All comments and docstrings
+  All whitespace and indentation
+  All variable names (except the one being fixed)
+  All business logic
   
 **Step 4: VERIFY COMPLETENESS**
 Before outputting, verify:
@@ -124,3 +124,5 @@ REMEMBER:
 - One line fix = Full file output with one line changed
 - When in doubt, preserve the original
 - **READ THE FILE FIRST, ALWAYS**"""
+
+##Tool invocation for generating the patch file and proper output parsing were the key challenges faced for the Patch agent 

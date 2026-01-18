@@ -9,7 +9,7 @@ def check_dependency(file_path: str) -> Dict:
     """
     Analyze a source file and extract its import/dependency information.
     """
-
+    #Currently this tool will only work for Python files.
     try:
         
         content = read_file.invoke({"file_path": file_path})
