@@ -36,9 +36,20 @@ class PatchState(MessagesState):
     shared_memory: Annotated[Dict[str, Any], lambda x, y: {**(x or {}), **y}]
     message_history: Annotated[list, add]
 
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+base_model = ChatGoogleGenerativeAI(
+            model="gemini-2.5-flash",
+            api_key=os.getenv('GOOGLE_API_KEY'),
+            temperature=0,
+            streaming=False
+        )
+ 
+
 
 tools = [read_file, check_dependency, create_patch_file]
-base_model = ModelConfig.get_base_model()
 model_with_tools = base_model.bind_tools(tools)
 
 

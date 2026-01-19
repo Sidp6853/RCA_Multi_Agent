@@ -1,3 +1,5 @@
+# app/workflow.py - Fixed version without leading spaces
+
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
 import logging
@@ -32,13 +34,10 @@ def rca_node(state: PipelineState) -> PipelineState:
         "messages": state.messages,
         "shared_memory": {"iteration": 0},
         "message_history": state.messages.copy()
-
     }
     
     rca_result = rca_app.invoke(rca_input)
     state.messages.extend(rca_result.get("messages", []))
-
-
     
     # Extract RCA result from shared_memory
     state.rca_result = rca_result["shared_memory"].get("rca_result")
@@ -69,14 +68,10 @@ def fix_node(state: PipelineState) -> PipelineState:
             "iteration": 0
         },
         "message_history": state.messages.copy()
-
     }
     
     fix_result = fix_app.invoke(fix_input)
     state.messages.extend(fix_result.get("messages", []))
-    
-
-
     
     state.fix_result = fix_result["shared_memory"].get("fix_result")
     
@@ -96,7 +91,7 @@ def patch_node(state: PipelineState) -> PipelineState:
         logger.error(state.error)
         return state
     
-    logger.info("Running Patch Agent")
+    logger.info("📝 Running Patch Agent")
     
     # Prepare input matching PatchState structure
     patch_input = {
@@ -107,13 +102,10 @@ def patch_node(state: PipelineState) -> PipelineState:
             "patch_iteration": 0
         },
         "message_history": state.messages.copy()
-
     }
     
     patch_result = patch_app.invoke(patch_input)
     state.messages.extend(patch_result.get("messages", []))
-
-    
     
     state.patch_result = patch_result["shared_memory"].get("patch_result")
     
@@ -140,4 +132,3 @@ workflow.add_edge("fix", "patch")
 workflow.add_edge("patch", END)
 
 pipeline = workflow.compile(checkpointer=checkpointer)
-

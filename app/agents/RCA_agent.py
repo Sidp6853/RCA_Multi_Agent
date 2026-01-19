@@ -4,7 +4,8 @@ from pydantic import BaseModel, Field
 from operator import add
 import logging
 import time
-
+from dotenv import load_dotenv
+import os
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langgraph.graph import StateGraph, START, END
@@ -14,7 +15,7 @@ from app.tools.read_file_tool import read_file
 from app.tools.get_project_directory_tool import get_project_directory
 from app.tools.check_dependency_tool import check_dependency
 from app.prompts.rca import SYSTEM_PROMPT
-from app.config.Model import ModelConfig
+
 
 
 
@@ -30,6 +31,20 @@ class RCAState(MessagesState):
     message_history: Annotated[list, add]
 
 
+
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+base_model = ChatGoogleGenerativeAI(
+            model="gemini-2.5-flash",
+            api_key=os.getenv('GOOGLE_API_KEY'),
+            temperature=0,
+            streaming=False
+        )
+
+
+
 #Output Schema
 class RCAOutput(BaseModel):
     """Root Cause Analysis output"""
@@ -41,7 +56,6 @@ class RCAOutput(BaseModel):
 
 #Toollist
 tools = [read_file, get_project_directory, check_dependency]
-base_model = ModelConfig.get_base_model()
 #Tool Binding to the model
 model_with_tools = base_model.bind_tools(tools)
 

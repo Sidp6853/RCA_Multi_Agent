@@ -20,6 +20,18 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+base_model = ChatGoogleGenerativeAI(
+            model="gemini-2.5-flash",
+            api_key=os.getenv('GOOGLE_API_KEY'),
+            temperature=0,
+            streaming=False
+        )
+
+
 
 class FixState(MessagesState):
     shared_memory: Annotated[Dict[str, Any], lambda x, y: {**(x or {}), **y}]  
@@ -38,7 +50,6 @@ class FixOutput(BaseModel):
 
 tools = [read_file]
 #Tool Binding 
-base_model = ModelConfig.get_base_model()
 model_with_tools = base_model.bind_tools(tools)
 
 

@@ -16,7 +16,6 @@ A production-grade 3-agent AI system built with **LangGraph** and **Google Gemin
 - [Project Structure](#project-structure)
 - [Agent Details](#agent-details)
 - [Tool Documentation](#tool-documentation)
-- [Submission Artifacts](#submission-artifacts)
 - [Usage Examples](#usage-examples)
 - [Design Decisions](#design-decisions)
 - [Troubleshooting](#troubleshooting)
@@ -71,14 +70,6 @@ This system orchestrates **3 specialized AI agents** to perform automated debugg
 **State Management:**
 - ✅ Shared Memory: JSON state object with `rca_result`, `fix_result`, `patch_result`
 - ✅ Message History: Complete log of all agent interactions, tool calls, inputs/outputs, iterations
-
-### ✅ Submission Artifacts
-
-1. **✅ Complete Multi-Agent Codebase** - All agent definitions, tools, orchestration logic
-2. **✅ Complete Message History (JSON)** - `output/<timestamp>/message_history.json`
-3. **✅ Final Shared Memory JSON** - `output/shared_memory.json`
-4. **✅ Generated Patch File** - `patches/fixed_<original>.py`
-5. **✅ Run Instructions** - See [Quick Start](#quick-start) section below
 
 ---
 
@@ -233,23 +224,6 @@ ls patches/               # Patch file
 ls output/                # Message history + shared memory
 ```
 
-**Expected Output:**
-```json
-{
-  "success": true,
-  "message": "Workflow completed successfully",
-  "results": {
-    "rca": {...},
-    "fix": {...},
-    "patch": {
-      "success": true,
-      "patch_file": "patches/fixed_user.py"
-    }
-  }
-}
-```
-
----
 
 #### Option 2: Streamlit UI
 ```bash
@@ -266,44 +240,6 @@ streamlit run ui.py
 
 # 5. View results in tabs (RCA, Fix Plan, Patch)
 ```
-
----
-
-#### Option 3: Programmatic Usage
-```python
-from app.workflow import pipeline, PipelineState
-from langchain_core.messages import HumanMessage
-import os
-import json
-
-# Set environment
-os.environ["CODEBASE_ROOT"] = "/path/to/codebase"
-os.environ["GOOGLE_API_KEY"] = "your-api-key"
-
-# Load error trace
-with open("trace_1.json") as f:
-    trace_data = f.read()
-
-# Run pipeline
-initial_state = PipelineState()
-initial_state.messages = [HumanMessage(content=trace_data)]
-
-result = pipeline.invoke(
-    initial_state,
-    config={"configurable": {"thread_id": "run-1"}}
-)
-
-# Access results
-print("RCA Result:", result.rca_result)
-print("Fix Plan:", result.fix_result)
-print("Patch File:", result.patch_result['patch_file'])
-
-# Get complete message history
-history = pipeline.get_state(config)
-print("Total messages:", len(history.values["messages"]))
-```
-
----
 
 ## 📁 Project Structure
 ```
@@ -335,7 +271,7 @@ RCA_Multi_Agent/
 │   └── services/
 │       └── user.py               # Example buggy file
 ├── api.py                        # FastAPI production server
-├── ui.py                         # Streamlit interactive UI
+├── streamlit_ui.py                         # Streamlit interactive UI
 ├── trace_1.json                  # 📁 Input: Error trace JSON
 ├── requirements.txt              # Python dependencies
 ├── .env                          # Environment config
@@ -354,17 +290,6 @@ RCA_Multi_Agent/
 - `read_file` - Read source code files
 - `get_project_directory` - Map codebase structure
 - `check_dependency` - Verify imports and packages
-
-**Output Schema (Stored in Shared Memory):**
-```json
-{
-  "error_type": "AttributeError",
-  "error_message": "type object 'User' has no attribute 'emails'",
-  "root_cause": "Comprehensive explanation with code context...",
-  "affected_file": "services/user.py",
-  "affected_line": 18
-}
-```
 
 **Process (8 Steps):**
 1. Parse error trace
@@ -456,16 +381,7 @@ RCA_Multi_Agent/
 **Arguments:**
 - `file_path` (str): Relative or absolute file path
 
-**Returns:**
-```python
-{
-    "success": bool,
-    "file_path": str,
-    "absolute_path": str,
-    "content": str,          # Full file content
-    "lines": int             # Line count
-}
-```
+
 
 ---
 
@@ -478,19 +394,6 @@ RCA_Multi_Agent/
 **Arguments:**
 - `relative_path` (str): Path from CODEBASE_ROOT (default: ".")
 
-**Returns:**
-```python
-{
-    "success": bool,
-    "structure": {
-        "folder/": {
-            "file1.py": "file",
-            "subfolder/": {...}
-        }
-    }
-}
-```
-
 **Max Depth:** 5 levels
 
 ---
@@ -500,18 +403,6 @@ RCA_Multi_Agent/
 **Purpose:** Extract Python imports from source files
 
 **Used By:** RCA Agent, Patch Agent
-
-**Arguments:**
-- `file_path` (str): File to analyze
-
-**Returns:**
-```python
-{
-    "success": bool,
-    "file": str,
-    "python_dependencies": ["module1", "module2", ...]
-}
-```
 
 ---
 
@@ -525,219 +416,9 @@ RCA_Multi_Agent/
 - `original_file_path` (str): Original file path
 - `fixed_content` (str): Complete patched code
 
-**Returns:**
-```python
-{
-    "success": bool,
-    "patch_file": "patches/fixed_<original>.py",
-    "original_file": str,
-    "size_bytes": int,
-    "lines": int
-}
-```
-
 **Output Location:** `patches/fixed_<original_filename>`
 
 ---
-
-## 📦 Submission Artifacts
-
-### 1. ✅ Complete Multi-Agent Codebase
-
-**Location:** Entire repository
-
-**Includes:**
-- Agent definitions (`app/agents/`)
-- Tool implementations (`app/tools/`)
-- Orchestration logic (`app/workflow.py`)
-- Shared memory & message logging (built into LangGraph)
-- Supporting scripts (`api.py`, `ui.py`)
-
-**How to Run:** See [Quick Start](#quick-start)
-
----
-
-### 2. ✅ Complete Message History (JSON)
-
-**Location:** `output/<timestamp>/message_history.json`
-
-**Generated By:** API server automatically after each workflow run
-
-**Schema:**
-```json
-{
-  "thread_id": "20250119_120000_1234",
-  "timestamp": "2025-01-19T12:00:00",
-  "input": {
-    "trace_file": "trace_1.json",
-    "codebase_root": "codebase"
-  },
-  "complete_message_history": [
-    {
-      "role": "user",
-      "content": "<error trace>",
-      "tool_calls": [],
-      "name": null
-    },
-    {
-      "role": "assistant",
-      "content": "",
-      "tool_calls": [{"name": "read_file", "args": {...}}],
-      "name": null
-    },
-    {
-      "role": "tool",
-      "content": "Successfully read file...",
-      "name": "read_file"
-    }
-  ],
-  "rca_result": {...},
-  "fix_result": {...},
-  "patch_result": {...},
-  "stats": {
-    "total_messages": 25,
-    "tool_calls": 8,
-    "success": true
-  }
-}
-```
-
-**Contains:**
-- ✅ All agent inputs/outputs
-- ✅ All tool call inputs/outputs
-- ✅ Iteration numbers
-- ✅ Retries and improvements
-
----
-
-### 3. ✅ Final Shared Memory JSON
-
-**Location:** `output/shared_memory.json`
-
-**Generated By:** API server after workflow completion
-
-**Schema:**
-```json
-{
-  "rca_result": {
-    "error_type": "AttributeError",
-    "error_message": "type object 'User' has no attribute 'emails'",
-    "root_cause": "...",
-    "affected_file": "services/user.py",
-    "affected_line": 18
-  },
-  "fix_result": {
-    "fix_summary": "Change User.emails to User.email on line 18",
-    "files_to_modify": ["services/user.py"],
-    "patch_plan": [...],
-    "safety_considerations": "..."
-  },
-  "patch_result": {
-    "success": true,
-    "patch_file": "patches/fixed_user.py",
-    "original_file": "services/user.py"
-  }
-}
-```
-
----
-
-### 4. ✅ Generated Patch File
-
-**Location:** `patches/fixed_<original>.py`
-
-**Example:** `patches/fixed_user.py`
-
-**Format:** Complete Python file with minimal changes
-
-**Before (Line 18):**
-```python
-user_exist = session.query(User).filter(User.emails == data.email).first()
-```
-
-**After (Line 18):**
-```python
-user_exist = session.query(User).filter(User.email == data.email).first()
-```
-
-**Characteristics:**
-- ✅ Complete file (all imports, functions preserved)
-- ✅ Only targeted line changed
-- ✅ No hallucinations or unnecessary modifications
-- ✅ Minimal, safe changes as required
-
----
-
-### 5. ✅ Run Instructions
-
-See [Quick Start](#quick-start) section for:
-- API Server setup (Option 1)
-- Streamlit UI usage (Option 2)
-- Programmatic execution (Option 3)
-
----
-
-## 📚 Usage Examples
-
-### Example: Fixing AttributeError
-
-**Input File:** `trace_1.json`
-```json
-{
-  "event_attributes": {
-    "exception.message": "type object 'User' has no attribute 'emails'",
-    "exception.type": "AttributeError",
-    "exception.stacktrace": "...File '/usr/srv/app/services/user.py', line 18..."
-  }
-}
-```
-
-**Step 1: Run Workflow**
-```bash
-curl -X POST "http://localhost:8000/analyze" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "trace_file_path": "trace_1.json",
-    "codebase_root": "codebase"
-  }'
-```
-
-**Step 2: Agent 1 (RCA) Output**
-```json
-{
-  "error_type": "AttributeError",
-  "affected_file": "services/user.py",
-  "affected_line": 18,
-  "root_cause": "Line 18 uses User.emails but model defines User.email (singular)"
-}
-```
-
-**Step 3: Agent 2 (Fix) Output**
-```json
-{
-  "fix_summary": "Change User.emails to User.email on line 18",
-  "files_to_modify": ["services/user.py"],
-  "patch_plan": [
-    "Navigate to services/user.py line 18",
-    "Change User.emails to User.email in query filter"
-  ]
-}
-```
-
-**Step 4: Agent 3 (Patch) Output**
-- **File Created:** `patches/fixed_user.py`
-- **Change:** Line 18 modified
-- **All other code:** Preserved exactly
-
-**Step 5: Verify Artifacts**
-```bash
-ls patches/fixed_user.py               # ✅ Patch file
-cat output/*/message_history.json      # ✅ Complete history
-cat output/shared_memory.json          # ✅ Shared state
-```
-
----
-
 ## 🎨 Design Decisions
 
 ### Why LangGraph?
@@ -766,61 +447,6 @@ cat output/shared_memory.json          # ✅ Shared state
 3. **Hardcoded Constraints:** Fix agent forces `files_to_modify = [rca_result["affected_file"]]`
 4. **Two-Phase Patch Generation:** Read file → Generate patch (prevents inventing code)
 5. **Comprehensive Prompts:** Detailed instructions with formatting rules
-
----
-
-## 🐛 Troubleshooting
-
-### Issue: "CODEBASE_ROOT environment variable not set"
-
-**Solution:**
-```bash
-export CODEBASE_ROOT=/path/to/codebase
-# or add to .env file
-echo "CODEBASE_ROOT=/path/to/codebase" >> .env
-```
-
----
-
-### Issue: "File not found" from read_file tool
-
-**Solution:**
-- Verify `CODEBASE_ROOT` is correct
-- Use relative paths (e.g., `services/user.py` not `/usr/srv/app/services/user.py`)
-- Check file exists: `ls $CODEBASE_ROOT/services/user.py`
-
----
-
-### Issue: Empty patch_result
-
-**Debug:**
-```bash
-# Check logs
-cat api.log | grep "PATCH"
-
-# Check message history
-cat output/*/message_history.json | jq '.patch_result'
-```
-
-**Common Causes:**
-- Tool call failed (original file not found)
-- Structured output parsing error
-- Exception during code generation
-
----
-
-### Issue: Gemini API quota errors (429)
-
-**Solution:**
-- Use API key with higher quota
-- Increase `time.sleep()` delays in agent code
-- Implement exponential backoff
-
----
-
-## 📄 License
-
-This project was created as part of an interview assignment.
 
 ---
 

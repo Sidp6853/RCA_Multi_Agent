@@ -5,7 +5,6 @@ from typing import Dict, Any, Optional
 import logging
 from datetime import datetime
 
-
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -13,12 +12,10 @@ import uvicorn
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage
 
-
 from app.workflow import pipeline, PipelineState
 
 load_dotenv()
 
-#
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -36,7 +33,6 @@ app = FastAPI(
     version="1.0.0"
 )
 
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -44,8 +40,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
 
 class AnalyzeRequest(BaseModel):
     """Request model for RCA analysis"""
@@ -65,8 +59,6 @@ class AnalyzeResponse(BaseModel):
     results: Optional[Dict[str, Any]] = None
     output_files: Optional[Dict[str, str]] = None
     error: Optional[str] = None
-
-
 
 @app.post("/analyze", response_model=AnalyzeResponse)
 async def analyze_codebase(request: AnalyzeRequest):
@@ -92,7 +84,6 @@ async def analyze_codebase(request: AnalyzeRequest):
                 status_code=404,
                 detail=f"Codebase root not found: {request.codebase_root}"
             )
-        
         
         os.environ["CODEBASE_ROOT"] = request.codebase_root
         
@@ -129,8 +120,6 @@ async def analyze_codebase(request: AnalyzeRequest):
         final_state = pipeline.invoke(initial_state, config=config)
         final_state = dict(final_state)
 
-
-
         history_state = pipeline.get_state(config)
         full_history = history_state.values["messages"]
 
@@ -143,24 +132,20 @@ async def analyze_codebase(request: AnalyzeRequest):
             },
             "complete_message_history": [
                 {
-                    "role": msg.role if hasattr(msg, 'role') else "unknown",
-                    "content": msg.content[:500] + "..." if len(msg.content) > 500 else msg.content,
+                    "role": msg.type if hasattr(msg, 'type') else getattr(msg, 'role', 'unknown'),
+                    "content": msg.content[:500] + "..." if len(str(msg.content)) > 500 else msg.content,
                     "tool_calls": getattr(msg, "tool_calls", []),
                     "name": getattr(msg, "name", None)
                 } for msg in full_history
             ],
-            
-                
-                "rca_result": final_state.get("rca_result"),
-                "fix_result": final_state.get("fix_result"),
-                "patch_result": final_state.get("patch_result"),
-                
-            
-
+            "rca_result": final_state.get("rca_result"),
+            "fix_result": final_state.get("fix_result"),
+            "patch_result": final_state.get("patch_result"),
             "stats": {
                 "total_messages": len(full_history),
                 "tool_calls": len([m for m in full_history if getattr(m, "tool_calls", [])]),
-                "success": bool(final_state.patch_result and final_state.patch_result.get("success"))
+                # ✅ FIX 1: Use .get() instead of attribute access
+                "success": bool(final_state.get("patch_result") and final_state.get("patch_result", {}).get("success"))
             }
         }
 
@@ -168,9 +153,7 @@ async def analyze_codebase(request: AnalyzeRequest):
         with open(trace_path, "w") as f:
             json.dump(complete_trace, f, indent=2, default=str)
         
-        
-        
-       
+        # Check for errors
         if final_state.get("error"):
             logger.error(f"Workflow failed: {final_state['error']}")
             raise HTTPException(
@@ -178,51 +161,58 @@ async def analyze_codebase(request: AnalyzeRequest):
                 detail=f"Workflow execution failed: {final_state['error']}"
             )
         
-        
+        # Build response data
         response_data = {
             "rca": {
-                "error_type": final_state.get("rca_result", {}).get("error_type") if final_state.get("rca_result") else None,
-                "error_message": final_state.get("rca_result", {}).get("error_message") if final_state.get("rca_result") else None,
-                "root_cause": final_state.get("rca_result", {}).get("root_cause") if final_state.get("rca_result") else None,
-                "affected_file": final_state.get("rca_result", {}).get("affected_file") if final_state.get("rca_result") else None,
-                "affected_line": final_state.get("rca_result", {}).get("affected_line") if final_state.get("rca_result") else None,
+                "error_type": final_state.get("rca_result", {}).get("error_type"),
+                "error_message": final_state.get("rca_result", {}).get("error_message"),
+                "root_cause": final_state.get("rca_result", {}).get("root_cause"),
+                "affected_file": final_state.get("rca_result", {}).get("affected_file"),
+                "affected_line": final_state.get("rca_result", {}).get("affected_line"),
             },
             "fix": {
-                "fix_summary": final_state.get("fix_result", {}).get("fix_summary") if final_state.get("fix_result") else None,
-                "files_to_modify": final_state.get("fix_result", {}).get("files_to_modify") if final_state.get("fix_result") else None,
-                "patch_plan": final_state.get("fix_result", {}).get("patch_plan") if final_state.get("fix_result") else None,
-                "safety_considerations": final_state.get("fix_result", {}).get("safety_considerations") if final_state.get("fix_result") else None,
+                "fix_summary": final_state.get("fix_result", {}).get("fix_summary"),
+                "files_to_modify": final_state.get("fix_result", {}).get("files_to_modify"),
+                "patch_plan": final_state.get("fix_result", {}).get("patch_plan"),
+                "safety_considerations": final_state.get("fix_result", {}).get("safety_considerations"),
             },
             "patch": {
-                "success": final_state.get("patch_result", {}).get("success") if final_state.get("patch_result") else False,
-                "patch_file": final_state.get("patch_result", {}).get("patch_file") if final_state.get("patch_result") else None,
-                "original_file": final_state.get("patch_result", {}).get("original_file") if final_state.get("patch_result") else None,
+                "success": final_state.get("patch_result", {}).get("success", False),
+                "patch_file": final_state.get("patch_result", {}).get("patch_file"),
+                "original_file": final_state.get("patch_result", {}).get("original_file"),
             }
         }
         
-        # Save outputs
-        output_dir = Path("output")
-        output_dir.mkdir(parents=True, exist_ok=True)
-        
+        # ✅ FIX 2 & 3: Save outputs to timestamped directory with different filenames
         output_files = {}
         
-        # Save RCA result
+        # Save complete shared memory (all results in one file)
+        shared_memory = {
+            "rca_result": final_state.get("rca_result"),
+            "fix_result": final_state.get("fix_result"),
+            "patch_result": final_state.get("patch_result")
+        }
+        
+        shared_memory_path = output_dir / "shared_memory.json"
+        with open(shared_memory_path, "w") as f:
+            json.dump(shared_memory, f, indent=2, default=str)
+        output_files["shared_memory"] = str(shared_memory_path)
+        
+        # Also save individual results
         if final_state.get("rca_result"):
-            rca_path = output_dir / "shared_memory.json"
+            rca_path = output_dir / "rca_result.json"
             with open(rca_path, "w") as f:
                 json.dump(final_state["rca_result"], f, indent=2)
             output_files["rca_result"] = str(rca_path)
         
-        # Save Fix result
         if final_state.get("fix_result"):
-            fix_path = output_dir / "shared_memory.json"
+            fix_path = output_dir / "fix_result.json"
             with open(fix_path, "w") as f:
                 json.dump(final_state["fix_result"], f, indent=2)
             output_files["fix_result"] = str(fix_path)
         
-        # Save Patch result
         if final_state.get("patch_result"):
-            patch_path = output_dir / "shared_memory.json"
+            patch_path = output_dir / "patch_result.json"
             with open(patch_path, "w") as f:
                 json.dump(final_state["patch_result"], f, indent=2, default=str)
             output_files["patch_result"] = str(patch_path)
@@ -247,19 +237,15 @@ async def analyze_codebase(request: AnalyzeRequest):
         logger.error(f"API Error: {error_msg}")
         logger.error(traceback.format_exc())
         
-        # Return 500 error status code
         raise HTTPException(
             status_code=500,
             detail=f"Internal server error: {error_msg}"
         )
 
-
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "service": "Multi-Agent RCA System"}
-
-
 
 if __name__ == "__main__":
     uvicorn.run(
