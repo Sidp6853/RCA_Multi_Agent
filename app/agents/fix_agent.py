@@ -232,14 +232,18 @@ File Content:
         "messages": tool_results,
         "message_history": history_entries
     }
-
-
 def should_continue(state: FixState):
     iteration = state["shared_memory"].get("iteration", 0)
     
-    if iteration >= 3:
-        logger.info(f"[SHOULD_CONTINUE] Max iterations ({iteration}) reached, ending")
+    # NEW: Check if we have a fix result
+    if state["shared_memory"].get("fix_result"):
+        logger.info(f"[SHOULD_CONTINUE] Fix result exists, ending")
         return END
+    
+    # Then check max iterations
+    if iteration >= 3:
+        logger.info(f"[SHOULD_CONTINUE] Max iterations reached, ending")
+        return END 
     
     last_message = state["messages"][-1]
     
@@ -249,10 +253,9 @@ def should_continue(state: FixState):
         logger.info(f"[SHOULD_CONTINUE] Tool calls detected, routing to tools")
         return "tools"
     
-    # Check if we have a fix result
-    if state["shared_memory"].get("fix_result"):
-        logger.info(f"[SHOULD_CONTINUE] Fix result exists, ending")
-        return END
+    logger.info(f"[SHOULD_CONTINUE] Continuing to LLM")
+    return "llm"
+
     
     logger.info(f"[SHOULD_CONTINUE] Continuing to LLM")
     return "llm"

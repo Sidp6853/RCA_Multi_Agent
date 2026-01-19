@@ -1,0 +1,30 @@
+{
+  "thread_id": "20260119_093913_7619",
+  "timestamp": "2026-01-19T09:40:40.359190",
+  "input": {
+    "trace_file": "D:\\Siddhi\\projects\\RCA-Agent\\trace_1.json",
+    "codebase_root": "D:\\Siddhi\\projects\\RCA-Agent\\codebase"
+  },
+  "complete_message_history": [
+    {
+      "role": "human",
+      "content": "[\n    {\n        \"event_attributes\": {\n            \"exception.escaped\": true,\n            \"exception.language\": \"python\",\n            \"exception.message\": \"type object 'User' has no attribute 'emails'\",\n            \"exception.stack_details\": \"[\\n  {\\n    \\\"exception.file\\\": \\\"/usr/srv/app/services/user.py\\\",\\n    \\\"exception.line\\\": 18,\\n    \\\"exception.function_name\\\": \\\"create_user_account\\\",\\n    \\\"exception.function_body\\\": \\\"async def create_user_account(data, session, background_tasks):\\\\n ...",
+      "tool_calls": [],
+      "name": null
+    },
+    {
+      "role": "human",
+      "content": "[\n    {\n        \"event_attributes\": {\n            \"exception.escaped\": true,\n            \"exception.language\": \"python\",\n            \"exception.message\": \"type object 'User' has no attribute 'emails'\",\n            \"exception.stack_details\": \"[\\n  {\\n    \\\"exception.file\\\": \\\"/usr/srv/app/services/user.py\\\",\\n    \\\"exception.line\\\": 18,\\n    \\\"exception.function_name\\\": \\\"create_user_account\\\",\\n    \\\"exception.function_body\\\": \\\"async def create_user_account(data, session, background_tasks):\\\\n ...",
+      "tool_calls": [],
+      "name": null
+    }
+  ],
+  "rca_result": null,
+  "fix_result": null,
+  "patch_result": null,
+  "stats": {
+    "total_messages": 2,
+    "tool_calls": 0,
+    "success": false
+  }
+}

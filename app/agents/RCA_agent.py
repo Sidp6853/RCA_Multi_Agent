@@ -189,7 +189,7 @@ def tool_node(state: RCAState) -> Dict[str, Any]:
         logger.info(f"[TOOL EXECUTION] {tool_name} | Input: {tool_args}")
         
         if tool_name == "read_file":
-            time.sleep(15)
+            time.sleep(30)
             observation = read_file.invoke(tool_args)
             
             if observation.get("success"):

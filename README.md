@@ -2,14 +2,13 @@
 
 **Automated Root Cause Analysis, Fix Suggestion & Patch Generation for APM Codebases**
 
-A production-grade 3-agent AI system built with **LangGraph** and **Google Gemini 2.5 Flash** that performs end-to-end debugging: analyzing stack traces, generating fix plans, and creating patched code files.
+A  3-agent AI system built with **LangGraph** and **Google Gemini 2.5 Flash** that performs end-to-end debugging: analyzing stack traces, generating fix plans, and creating patched code files.
 
 ---
 
 ## 📋 Table of Contents
 
 - [Overview](#overview)
-- [Assignment Requirements](#assignment-requirements)
 - [Architecture](#architecture)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
@@ -40,8 +39,6 @@ This system orchestrates **3 specialized AI agents** to perform automated debugg
 ✅ **Anti-Hallucination Design** - Tool-enforced verification and structured outputs  
 
 ---
-
-## 📝 Assignment Requirements
 
 ### ✅ Required Agents (3 Agents Only)
 
@@ -178,7 +175,7 @@ Input: Error Trace JSON (stack traces + metadata)
 
 2. **Create virtual environment**
 ```bash
-   python -m venv venv
+   python -m venv venv or conda create -n venv
    source venv/bin/activate  # On Windows: venv\Scripts\activate
 ```
 
@@ -219,6 +216,8 @@ curl -X POST "http://localhost:8000/analyze" \
     "codebase_root": "codebase"
   }'
 
+  or use swagger docs to run the workflow 
+
 # 4. Check outputs
 ls patches/               # Patch file
 ls output/                # Message history + shared memory
@@ -230,15 +229,15 @@ ls output/                # Message history + shared memory
 # 1. Start Streamlit interface
 streamlit run ui.py
 
-# 2. Open browser at http://localhost:8501
+2. Open browser at http://localhost:8501
 
-# 3. Fill form:
-#    - Trace File Path: trace_1.json
-#    - Codebase Root: codebase
+3. Fill form:
+   - Trace File Path: trace_1.json
+   - Codebase Root: codebase
 
-# 4. Click "Start Analysis"
+4. Click "Start Analysis"
 
-# 5. View results in tabs (RCA, Fix Plan, Patch)
+5. View results in tabs (RCA, Fix Plan, Patch)
 ```
 
 ## 📁 Project Structure
@@ -258,8 +257,7 @@ RCA_Multi_Agent/
 │   │   ├── rca.py                # RCA system prompt
 │   │   ├── fix.py                # Fix suggestion prompt
 │   │   └── patch.py              # Patch generation prompt
-│   ├── config/
-│   │   └── Model.py              # Gemini 2.5 Flash config
+│   ├-------main.py               # To run the workflow directly 
 │   └── workflow.py               # LangGraph orchestrator
 ├── patches/                      # 📁 Output: Generated patch files
 │   └── fixed_<original>.py       # Example: fixed_user.py
@@ -425,11 +423,6 @@ RCA_Multi_Agent/
 - **State Management:** Built-in shared memory across agents
 - **Checkpointing:** Automatic message history retention
 - **Tool Coordination:** Native tool calling with conditional routing
-
-### Why 3 Sequential Agents?
-- **Clear Separation:** RCA → Fix → Patch follows logical debugging flow
-- **State Dependencies:** Each agent builds on previous results
-- **Auditability:** Easy to trace which agent made which decision
 
 ### Tool Distribution Strategy
 
