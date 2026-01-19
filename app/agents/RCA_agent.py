@@ -202,20 +202,23 @@ File Content:
                 tool_content = f"Error: {observation.get('error', 'Unknown error')}"
                 
         elif tool_name == "get_project_directory":
+            time.sleep(15)
             observation = get_project_directory.invoke(tool_args)
             tool_content = str(observation)
-            time.sleep(15)
+            
             
         elif tool_name == "check_dependency":
-            observation = check_dependency.invoke(tool_args)
-            tool_content = str(observation)
             time.sleep(15)
+            observation = check_dependency.invoke(tool_args)
+
+            tool_content = str(observation)
+           
             
         else:
             observation = f"Unknown tool: {tool_name}"
             tool_content = observation
 
-        logger.info(f"[TOOL RESULT] {tool_name}: {str(observation)[:200]}")
+        logger.info(f"[TOOL RESULT] {tool_name}: {str(observation)}")
         
         history_entries.append({
             "event": "tool_call",

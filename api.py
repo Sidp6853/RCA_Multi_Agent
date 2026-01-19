@@ -29,8 +29,7 @@ logger = logging.getLogger(__name__)
 # Initializing FastAPI app
 app = FastAPI(
     title="Multi-Agent RCA System API",
-    description="API for Root Cause Analysis, Fix Suggestion, and Patch Generation",
-    version="1.0.0"
+    description="API for Root Cause Analysis, Fix Suggestion, and Patch Generation"
 )
 
 app.add_middleware(
@@ -87,11 +86,11 @@ async def analyze_codebase(request: AnalyzeRequest):
         
         os.environ["CODEBASE_ROOT"] = request.codebase_root
         
-        logger.info("=" * 80)
+        
         logger.info("API Request received")
         logger.info(f"Trace File: {request.trace_file_path}")
         logger.info(f"Codebase Root: {request.codebase_root}")
-        logger.info("=" * 80)
+        
         
         # Load trace file
         try:
@@ -144,7 +143,7 @@ async def analyze_codebase(request: AnalyzeRequest):
             "stats": {
                 "total_messages": len(full_history),
                 "tool_calls": len([m for m in full_history if getattr(m, "tool_calls", [])]),
-                # ✅ FIX 1: Use .get() instead of attribute access
+                
                 "success": bool(final_state.get("patch_result") and final_state.get("patch_result", {}).get("success"))
             }
         }
@@ -183,10 +182,10 @@ async def analyze_codebase(request: AnalyzeRequest):
             }
         }
         
-        # ✅ FIX 2 & 3: Save outputs to timestamped directory with different filenames
+        
         output_files = {}
         
-        # Save complete shared memory (all results in one file)
+        
         shared_memory = {
             "rca_result": final_state.get("rca_result"),
             "fix_result": final_state.get("fix_result"),
@@ -198,29 +197,11 @@ async def analyze_codebase(request: AnalyzeRequest):
             json.dump(shared_memory, f, indent=2, default=str)
         output_files["shared_memory"] = str(shared_memory_path)
         
-        # Also save individual results
-        if final_state.get("rca_result"):
-            rca_path = output_dir / "rca_result.json"
-            with open(rca_path, "w") as f:
-                json.dump(final_state["rca_result"], f, indent=2)
-            output_files["rca_result"] = str(rca_path)
-        
-        if final_state.get("fix_result"):
-            fix_path = output_dir / "fix_result.json"
-            with open(fix_path, "w") as f:
-                json.dump(final_state["fix_result"], f, indent=2)
-            output_files["fix_result"] = str(fix_path)
-        
-        if final_state.get("patch_result"):
-            patch_path = output_dir / "patch_result.json"
-            with open(patch_path, "w") as f:
-                json.dump(final_state["patch_result"], f, indent=2, default=str)
-            output_files["patch_result"] = str(patch_path)
-        
-        logger.info("=" * 80)
+
+
         logger.info("Workflow completed successfully")
         logger.info(f"Patch file: {final_state.get('patch_result', {}).get('patch_file', 'N/A')}")
-        logger.info("=" * 80)
+        
         
         return AnalyzeResponse(
             success=True,

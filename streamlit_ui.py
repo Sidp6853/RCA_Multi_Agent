@@ -79,7 +79,6 @@ with col1:
     st.subheader("📄 Trace File")
     trace_file_path = st.text_input(
         "Path to error trace JSON file",
-        value="trace_1.json",
         help="Full or relative path to your error trace file"
     )
     
@@ -95,8 +94,7 @@ with col2:
     st.subheader("📁 Codebase")
     codebase_root = st.text_input(
         "Path to codebase directory",
-        value="codebase",
-        help="Root directory of your codebase to analyze"
+         help="Root directory of your codebase to analyze"
     )
     
     # Show directory preview if exists

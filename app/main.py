@@ -7,7 +7,7 @@ from langchain_core.messages import HumanMessage
 
 from app.workflow import pipeline, PipelineState
 
-# Load environment variables
+
 load_dotenv()
 
 
@@ -23,12 +23,11 @@ def run_rca_workflow(trace_file_path: str, codebase_root: str):
     # Set environment variable for tools
     os.environ["CODEBASE_ROOT"] = codebase_root
     
-    print("=" * 80)
-    print("🔍 Multi-Agent RCA System")
-    print("=" * 80)
+    
+    print("Multi-Agent RCA System")
     print(f"Trace File: {trace_file_path}")
     print(f"Codebase Root: {codebase_root}")
-    print("=" * 80)
+    
     
     # Validate inputs
     if not os.path.exists(trace_file_path):
@@ -43,7 +42,7 @@ def run_rca_workflow(trace_file_path: str, codebase_root: str):
     print("\n Loading error trace...")
     with open(trace_file_path, "r", encoding="utf-8") as f:
         trace_data = f.read()
-    print("✅ Trace loaded successfully")
+    print(" Trace loaded successfully")
     
     # Create output directory
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -62,10 +61,10 @@ def run_rca_workflow(trace_file_path: str, codebase_root: str):
     
     try:
         # Run the workflow
-        print("\n" + "=" * 80)
+      
         final_state = pipeline.invoke(initial_state, config=config)
         final_state = dict(final_state)
-        print("=" * 80)
+        
         
         # Get complete message history from checkpoint
         history_state = pipeline.get_state(config)
@@ -77,10 +76,9 @@ def run_rca_workflow(trace_file_path: str, codebase_root: str):
             return
         
         # Print results
-        print("\n" + "=" * 80)
-        print(" WORKFLOW COMPLETED SUCCESSFULLY")
-        print("=" * 80)
         
+        print(" WORKFLOW COMPLETED SUCCESSFULLY")
+       
         # 1. RCA Results
         print("\nRCA RESULTS:")
         print("-" * 80)
@@ -110,7 +108,6 @@ def run_rca_workflow(trace_file_path: str, codebase_root: str):
         
         # 3. Patch Results
         print("\n PATCH GENERATION:")
-        print("-" * 80)
         patch_result = final_state.get("patch_result")
         if patch_result and patch_result.get("success"):
             print(f"Patch created successfully!")
@@ -122,9 +119,9 @@ def run_rca_workflow(trace_file_path: str, codebase_root: str):
             print(" Patch generation failed")
         
        
-        print("\n" + "=" * 80)
+
         print(" SAVING OUTPUTS")
-        print("=" * 80)
+
         
         
         message_history = {
@@ -169,15 +166,13 @@ def run_rca_workflow(trace_file_path: str, codebase_root: str):
             json.dump(shared_memory, f, indent=2, default=str)
         print(f" Shared memory saved: {shared_memory_path}")
         
-        # Summary
-        print("\n" + "=" * 80)
+        
         print(" SUMMARY")
-        print("=" * 80)
         print(f"Total Messages: {len(full_message_history)}")
         print(f"Tool Calls: {len([m for m in full_message_history if getattr(m, 'tool_calls', [])])}")
         print(f"Patch File: {patch_result.get('patch_file') if patch_result else 'N/A'}")
         print(f"Output Directory: {output_dir}")
-        print("=" * 80)
+        
         
     except Exception as e:
         print(f"\n Error during workflow execution: {str(e)}")

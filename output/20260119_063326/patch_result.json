@@ -1,0 +1,10 @@
+{
+  "success": true,
+  "patch_file": "patches\\fixed_user.py",
+  "original_file": "app/services/user.py",
+  "fixed_filename": "fixed_user.py",
+  "size_bytes": 7365,
+  "lines": 185,
+  "absolute_path": "D:\\Siddhi\\projects\\RCA-Agent\\patches\\fixed_user.py",
+  "message": "Patch created successfully at patches\\fixed_user.py"
+}

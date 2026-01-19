@@ -3,6 +3,7 @@ from typing import Dict, Any, Annotated
 from operator import add
 import time
 from pydantic import BaseModel, Field
+import json
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage
