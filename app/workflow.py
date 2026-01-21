@@ -6,7 +6,7 @@ from langgraph.graph import StateGraph, START, END
 from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.memory import MemorySaver 
 
-from app.agents.rca_agent import rca_app
+from app.agents.RCA_agent import rca_app
 from app.agents.fix_agent import fix_app
 from app.agents.patch_agent import patch_app
 
@@ -25,7 +25,7 @@ class PipelineState:
 
 def rca_node(state: PipelineState) -> PipelineState:
     """Run RCA agent"""
-    logger.info("🔍 Running RCA Agent")
+    logger.info("Running RCA Agent")
     
     # Prepare input matching RCAState structure
     rca_input = {
@@ -56,7 +56,7 @@ def fix_node(state: PipelineState) -> PipelineState:
         logger.error(state.error)
         return state
         
-    logger.info("🔧 Running Fix Agent")
+    logger.info("Running Fix Agent")
     
     # Prepare input matching FixState structure
     fix_input = {
@@ -89,7 +89,7 @@ def patch_node(state: PipelineState) -> PipelineState:
         logger.error(state.error)
         return state
     
-    logger.info("📝 Running Patch Agent")
+    logger.info("Running Patch Agent")
     
     # Prepare input matching PatchState structure
     patch_input = {
