@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RCA Analyzer - Multi-Agent Root Cause Analysis System</title>
+    
+    <!-- React and Babel -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'JetBrains Mono', 'Courier New', monospace;
+            overflow-x: hidden;
+        }
+        
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.8; }
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // Icon Components
+        const Upload = ({ size = 24, color = "currentColor" }) => (
+            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="17 8 12 3 7 8" />
+                <line x1="12" y1="3" x2="12" y2="15" />
+            </svg>
+        );
+
+        const FileCode = ({ size = 24, color = "currentColor" }) => (
+            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="16" y1="13" x2="8" y2="13" />
+                <line x1="16" y1="17" x2="8" y2="17" />
+                <polyline points="10 9 9 9 8 9" />
+            </svg>
+        );
+
+        const AlertCircle = ({ size = 24, color = "currentColor" }) => (
+            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+            </svg>
+        );
+
+        const CheckCircle = ({ size = 24, color = "currentColor" }) => (
+            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                <polyline points="22 4 12 14.01 9 11.01" />
+            </svg>
+        );
+
+        const Loader = ({ size = 24, color = "currentColor", style = {} }) => (
+            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style}>
+                <line x1="12" y1="2" x2="12" y2="6" />
+                <line x1="12" y1="18" x2="12" y2="22" />
+                <line x1="4.93" y1="4.93" x2="7.76" y2="7.76" />
+                <line x1="16.24" y1="16.24" x2="19.07" y2="19.07" />
+                <line x1="2" y1="12" x2="6" y2="12" />
+                <line x1="18" y1="12" x2="22" y2="12" />
+                <line x1="4.93" y1="19.07" x2="7.76" y2="16.24" />
+                <line x1="16.24" y1="7.76" x2="19.07" y2="4.93" />
+            </svg>
+        );
+
+        const FolderOpen = ({ size = 24, color = "currentColor", style = {} }) => (
+            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style}>
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                <polyline points="2 11 4 19 20 19 22 11" />
+            </svg>
+        );
+
+        const ChevronRight = ({ size = 24, color = "currentColor", style = {} }) => (
+            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style}>
+                <polyline points="9 18 15 12 9 6" />
+            </svg>
+        );
+
+        const Terminal = ({ size = 24, color = "currentColor" }) => (
+            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="4 17 10 11 4 5" />
+                <line x1="12" y1="19" x2="20" y2="19" />
+            </svg>
+        );
+
+        const Download = ({ size = 24, color = "currentColor" }) => (
+            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+        );
+
+        // Result Card Component
+        const ResultCard = ({ title, icon, color, data }) => {
+            const [expanded, setExpanded] = useState(true);
+
+            return (
+                <div style={{
+                    background: 'rgba(15, 23, 42, 0.6)',
+                    border: `1px solid ${color}40`,
+                    borderRadius: '16px',
+                    overflow: 'hidden',
+                    backdropFilter: 'blur(10px)',
+                    animation: 'slideIn 0.5s ease-out',
+                }}>
+                    <div
+                        onClick={() => setExpanded(!expanded)}
+                        style={{
+                            padding: '1.5rem 2rem',
+                            background: `${color}20`,
+                            borderBottom: expanded ? `1px solid ${color}40` : 'none',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            transition: 'all 0.3s ease',
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = `${color}30`}
+                        onMouseLeave={(e) => e.currentTarget.style.background = `${color}20`}
+                    >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                            {icon}
+                            <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 600, color: '#e0e7ff' }}>
+                                {title}
+                            </h3>
+                        </div>
+                        <ChevronRight
+                            size={20}
+                            color="#94a3b8"
+                            style={{
+                                transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                                transition: 'transform 0.3s ease',
+                            }}
+                        />
+                    </div>
+
+                    {expanded && (
+                        <div style={{ padding: '2rem' }}>
+                            {Object.entries(data).map(([key, value]) => {
+                                if (!value) return null;
+                                
+                                return (
+                                    <div key={key} style={{ marginBottom: '1.5rem' }}>
+                                        <label style={{
+                                            display: 'block',
+                                            marginBottom: '0.5rem',
+                                            fontSize: '0.75rem',
+                                            color: '#94a3b8',
+                                            textTransform: 'uppercase',
+                                            letterSpacing: '0.1em',
+                                        }}>
+                                            {key.replace(/_/g, ' ')}
+                                        </label>
+                                        <div style={{
+                                            background: 'rgba(15, 23, 42, 0.8)',
+                                            border: '1px solid rgba(148, 163, 184, 0.1)',
+                                            borderRadius: '8px',
+                                            padding: '1rem',
+                                            color: '#e0e7ff',
+                                            fontSize: '0.95rem',
+                                            lineHeight: '1.6',
+                                            fontFamily: '"JetBrains Mono", monospace',
+                                            wordBreak: 'break-word',
+                                            whiteSpace: 'pre-wrap',
+                                        }}>
+                                            {typeof value === 'object' 
+                                                ? JSON.stringify(value, null, 2)
+                                                : String(value)
+                                            }
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        // Main App Component
+        const RCAAnalyzer = () => {
+            const [traceFilePath, setTraceFilePath] = useState('');
+            const [codebaseRoot, setCodebaseRoot] = useState('');
+            const [status, setStatus] = useState('idle');
+            const [results, setResults] = useState(null);
+            const [error, setError] = useState(null);
+            const [progress, setProgress] = useState({ stage: '', message: '' });
+
+            const analyzeCode = async () => {
+                if (!traceFilePath || !codebaseRoot) {
+                    setError('Please provide both trace file path and codebase root path');
+                    return;
+                }
+
+                setStatus('analyzing');
+                setError(null);
+                setResults(null);
+
+                const stages = [
+                    { stage: 'Initializing', message: 'Loading trace file and validating inputs...' },
+                    { stage: 'Root Cause Analysis', message: 'Analyzing error trace and identifying root cause...' },
+                    { stage: 'Fix Suggestion', message: 'Generating fix recommendations...' },
+                    { stage: 'Patch Generation', message: 'Creating code patches...' }
+                ];
+
+                let currentStage = 0;
+                const progressInterval = setInterval(() => {
+                    if (currentStage < stages.length) {
+                        setProgress(stages[currentStage]);
+                        currentStage++;
+                    }
+                }, 1500);
+
+                try {
+                    const response = await fetch('http://127.0.0.1:8000/analyze', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            trace_file_path: traceFilePath,
+                            codebase_root: codebaseRoot
+                        })
+                    });
+
+                    clearInterval(progressInterval);
+
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.detail || 'Analysis failed');
+                    }
+
+                    const data = await response.json();
+                    setResults(data.results);
+                    setStatus('success');
+                } catch (err) {
+                    clearInterval(progressInterval);
+                    setError(err.message);
+                    setStatus('error');
+                }
+            };
+
+            return (
+                <div style={{
+                    minHeight: '100vh',
+                    background: 'linear-gradient(135deg, #0a0e27 0%, #1a1f3a 100%)',
+                    fontFamily: '"JetBrains Mono", "Fira Code", "Courier New", monospace',
+                    color: '#e0e7ff',
+                    padding: '2rem',
+                }}>
+                    {/* Header */}
+                    <header style={{
+                        maxWidth: '1400px',
+                        margin: '0 auto 3rem',
+                        textAlign: 'center',
+                    }}>
+                        <div style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '1rem',
+                            background: 'rgba(99, 102, 241, 0.1)',
+                            padding: '1rem 2rem',
+                            borderRadius: '12px',
+                            border: '1px solid rgba(99, 102, 241, 0.2)',
+                            marginBottom: '1.5rem',
+                        }}>
+                            <Terminal size={32} color="#6366f1" />
+                            <h1 style={{
+                                margin: 0,
+                                fontSize: '2.5rem',
+                                fontWeight: 700,
+                                background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+                                WebkitBackgroundClip: 'text',
+                                WebkitTextFillColor: 'transparent',
+                                letterSpacing: '-0.02em',
+                            }}>
+                                RCA ANALYZER
+                            </h1>
+                        </div>
+                        <p style={{
+                            fontSize: '1.1rem',
+                            color: '#94a3b8',
+                            margin: 0,
+                            letterSpacing: '0.05em',
+                        }}>
+                            Multi-Agent Root Cause Analysis · Fix Suggestion · Patch Generation
+                        </p>
+                    </header>
+
+                    <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+                        {/* Input Section */}
+                        <div style={{
+                            background: 'rgba(15, 23, 42, 0.6)',
+                            border: '1px solid rgba(148, 163, 184, 0.1)',
+                            borderRadius: '16px',
+                            padding: '2.5rem',
+                            marginBottom: '2rem',
+                            backdropFilter: 'blur(10px)',
+                        }}>
+                            <h2 style={{
+                                fontSize: '1.25rem',
+                                marginBottom: '1.5rem',
+                                color: '#e0e7ff',
+                                fontWeight: 600,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.5rem',
+                            }}>
+                                <FileCode size={24} color="#6366f1" />
+                                CONFIGURE ANALYSIS
+                            </h2>
+
+                            <div style={{ display: 'grid', gap: '1.5rem' }}>
+                                {/* Trace File Path */}
+                                <div>
+                                    <label style={{
+                                        display: 'block',
+                                        marginBottom: '0.75rem',
+                                        fontSize: '0.875rem',
+                                        color: '#94a3b8',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.05em',
+                                    }}>
+                                        Error Trace File Path (.json)
+                                    </label>
+                                    <div style={{ position: 'relative' }}>
+                                        <FileCode size={20} color="#6366f1" style={{
+                                            position: 'absolute',
+                                            left: '1rem',
+                                            top: '50%',
+                                            transform: 'translateY(-50%)',
+                                        }} />
+                                        <input
+                                            type="text"
+                                            value={traceFilePath}
+                                            onChange={(e) => setTraceFilePath(e.target.value)}
+                                            placeholder="/path/to/error_trace.json"
+                                            style={{
+                                                width: '100%',
+                                                padding: '1rem 1rem 1rem 3rem',
+                                                background: 'rgba(15, 23, 42, 0.8)',
+                                                border: '1px solid rgba(148, 163, 184, 0.2)',
+                                                borderRadius: '12px',
+                                                color: '#e0e7ff',
+                                                fontSize: '1rem',
+                                                fontFamily: 'inherit',
+                                                outline: 'none',
+                                                transition: 'all 0.3s ease',
+                                            }}
+                                            onFocus={(e) => e.target.style.borderColor = 'rgba(99, 102, 241, 0.6)'}
+                                            onBlur={(e) => e.target.style.borderColor = 'rgba(148, 163, 184, 0.2)'}
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Codebase Root */}
+                                <div>
+                                    <label style={{
+                                        display: 'block',
+                                        marginBottom: '0.75rem',
+                                        fontSize: '0.875rem',
+                                        color: '#94a3b8',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.05em',
+                                    }}>
+                                        Codebase Root Path
+                                    </label>
+                                    <div style={{ position: 'relative' }}>
+                                        <FolderOpen size={20} color="#6366f1" style={{
+                                            position: 'absolute',
+                                            left: '1rem',
+                                            top: '50%',
+                                            transform: 'translateY(-50%)',
+                                        }} />
+                                        <input
+                                            type="text"
+                                            value={codebaseRoot}
+                                            onChange={(e) => setCodebaseRoot(e.target.value)}
+                                            placeholder="/path/to/your/codebase"
+                                            style={{
+                                                width: '100%',
+                                                padding: '1rem 1rem 1rem 3rem',
+                                                background: 'rgba(15, 23, 42, 0.8)',
+                                                border: '1px solid rgba(148, 163, 184, 0.2)',
+                                                borderRadius: '12px',
+                                                color: '#e0e7ff',
+                                                fontSize: '1rem',
+                                                fontFamily: 'inherit',
+                                                outline: 'none',
+                                                transition: 'all 0.3s ease',
+                                            }}
+                                            onFocus={(e) => e.target.style.borderColor = 'rgba(99, 102, 241, 0.6)'}
+                                            onBlur={(e) => e.target.style.borderColor = 'rgba(148, 163, 184, 0.2)'}
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Analyze Button */}
+                                <button
+                                    onClick={analyzeCode}
+                                    disabled={status === 'analyzing' || !traceFilePath || !codebaseRoot}
+                                    style={{
+                                        width: '100%',
+                                        padding: '1.25rem',
+                                        background: status === 'analyzing' 
+                                            ? 'rgba(148, 163, 184, 0.2)' 
+                                            : 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+                                        border: 'none',
+                                        borderRadius: '12px',
+                                        color: '#fff',
+                                        fontSize: '1rem',
+                                        fontWeight: 600,
+                                        cursor: status === 'analyzing' ? 'not-allowed' : 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: '0.75rem',
+                                        transition: 'all 0.3s ease',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.05em',
+                                        opacity: (!traceFilePath || !codebaseRoot) ? 0.5 : 1,
+                                    }}
+                                    onMouseEnter={(e) => {
+                                        if (status !== 'analyzing' && traceFilePath && codebaseRoot) {
+                                            e.target.style.transform = 'translateY(-2px)';
+                                            e.target.style.boxShadow = '0 10px 30px rgba(99, 102, 241, 0.4)';
+                                        }
+                                    }}
+                                    onMouseLeave={(e) => {
+                                        e.target.style.transform = 'translateY(0)';
+                                        e.target.style.boxShadow = 'none';
+                                    }}
+                                >
+                                    {status === 'analyzing' ? (
+                                        <>
+                                            <Loader size={20} style={{ animation: 'spin 1s linear infinite' }} />
+                                            ANALYZING...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <ChevronRight size={20} />
+                                            START ANALYSIS
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Progress Section */}
+                        {status === 'analyzing' && (
+                            <div style={{
+                                background: 'rgba(99, 102, 241, 0.1)',
+                                border: '1px solid rgba(99, 102, 241, 0.3)',
+                                borderRadius: '16px',
+                                padding: '2rem',
+                                marginBottom: '2rem',
+                                animation: 'pulse 2s ease-in-out infinite',
+                            }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
+                                    <Loader size={24} color="#6366f1" style={{ animation: 'spin 1s linear infinite' }} />
+                                    <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#6366f1' }}>
+                                        {progress.stage}
+                                    </h3>
+                                </div>
+                                <p style={{ margin: 0, color: '#94a3b8' }}>{progress.message}</p>
+                            </div>
+                        )}
+
+                        {/* Error Section */}
+                        {status === 'error' && (
+                            <div style={{
+                                background: 'rgba(239, 68, 68, 0.1)',
+                                border: '1px solid rgba(239, 68, 68, 0.3)',
+                                borderRadius: '16px',
+                                padding: '2rem',
+                                marginBottom: '2rem',
+                            }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                    <AlertCircle size={24} color="#ef4444" />
+                                    <div>
+                                        <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.25rem', color: '#ef4444' }}>
+                                            Analysis Failed
+                                        </h3>
+                                        <p style={{ margin: 0, color: '#fca5a5' }}>{error}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Results Section */}
+                        {status === 'success' && results && (
+                            <div style={{ display: 'grid', gap: '2rem' }}>
+                                <ResultCard
+                                    title="ROOT CAUSE ANALYSIS"
+                                    icon={<AlertCircle size={24} color="#f59e0b" />}
+                                    color="#f59e0b"
+                                    data={results.rca}
+                                />
+
+                                <ResultCard
+                                    title="FIX SUGGESTION"
+                                    icon={<FileCode size={24} color="#3b82f6" />}
+                                    color="#3b82f6"
+                                    data={results.fix}
+                                />
+
+                                <ResultCard
+                                    title="PATCH GENERATION"
+                                    icon={<CheckCircle size={24} color="#22c55e" />}
+                                    color="#22c55e"
+                                    data={results.patch}
+                                />
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        // Render the app
+        ReactDOM.render(<RCAAnalyzer />, document.getElementById('root'));
+    </script>
+</body>
+</html>
